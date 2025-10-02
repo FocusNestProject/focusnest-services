@@ -4,7 +4,6 @@ FROM golang:1.22 AS builder
 
 WORKDIR /workspace
 
-COPY go.work go.work.sum* ./
 COPY shared-libs/ shared-libs/
 COPY session-service/ session-service/
 
