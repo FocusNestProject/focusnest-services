@@ -1,0 +1,6 @@
+package: api
+generate:
+  chi-server: true
+  models: true
+go-package: github.com/focusnest/auth-gateway/api
+output: api.gen.go

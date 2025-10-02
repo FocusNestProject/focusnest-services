@@ -1,0 +1,56 @@
+openapi: 3.1.0
+info:
+  title: FocusNest Media Service
+  version: 0.0.1
+paths:
+  /healthz:
+    get:
+      operationId: getHealth
+      responses:
+        "200":
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+  /v1/media/presign:
+    post:
+      operationId: createPresignedUrl
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PresignRequest"
+      responses:
+        "200":
+          description: Presigned URL response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PresignResponse"
+components:
+  schemas:
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+        service:
+          type: string
+        version:
+          type: string
+    PresignRequest:
+      type: object
+      properties:
+        path:
+          type: string
+        contentType:
+          type: string
+    PresignResponse:
+      type: object
+      properties:
+        url:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time

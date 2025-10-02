@@ -1,0 +1,14 @@
+go 1.22
+
+use (
+	./activity-service
+	./analytics-service
+	./auth-gateway
+	./gateway-api
+	./media-service
+	./notification-service
+	./session-service
+	./shared-libs
+	./user-service
+	./webhook-service
+)
