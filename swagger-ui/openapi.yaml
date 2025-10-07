@@ -1,0 +1,687 @@
+openapi: 3.0.3
+info:
+  title: FocusNest API Documentation
+  description: Complete API documentation for FocusNest productivity tracking microservices
+  version: 1.0.0
+  contact:
+    name: FocusNest Team
+    email: support@focusnest.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:8080
+    description: Gateway API (Main Entry Point)
+  - url: http://localhost:8081
+    description: Activity Service (Direct Access)
+  - url: http://localhost:8082
+    description: User Service (Direct Access)
+  - url: http://localhost:8083
+    description: Session Service (Direct Access)
+  - url: http://localhost:8084
+    description: Media Service (Direct Access)
+  - url: http://localhost:8085
+    description: Analytics Service (Direct Access)
+  - url: http://localhost:8086
+    description: Webhook Service (Direct Access)
+
+tags:
+  - name: Health
+    description: Service health checks
+  - name: Productivity
+    description: Productivity tracking and management
+  - name: Chatbot
+    description: AI chatbot interactions
+  - name: Analytics
+    description: Progress analytics and insights
+  - name: User
+    description: User profile management
+  - name: Session
+    description: Session management
+  - name: Media
+    description: File and media handling
+  - name: Webhook
+    description: Webhook handling
+
+paths:
+  # Health Endpoints
+  /healthz:
+    get:
+      tags: [Health]
+      summary: Health Check
+      description: Check if the service is running and healthy
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "ok"
+                  service:
+                    type: string
+                    example: "gateway-api"
+                  version:
+                    type: string
+                    example: "1.0.0"
+
+  # Productivity Endpoints
+  /v1/productivities:
+    get:
+      tags: [Productivity]
+      summary: List Productivity Entries
+      description: "Get paginated list of productivity entries for the authenticated user"
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          description: "Page number (default: 1)"
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: pageSize
+          in: query
+          description: "Number of items per page (default: 20, max: 100)"
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: year
+          in: query
+          description: Filter by year
+          schema:
+            type: integer
+        - name: month
+          in: query
+          description: "Filter by month (1-12)"
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 12
+      responses:
+        '200':
+          description: List of productivity entries
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ProductivityEntry'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+        '401':
+          description: Unauthorized
+        '500':
+          description: Internal server error
+
+    post:
+      tags: [Productivity]
+      summary: Create Productivity Entry
+      description: "Create a new productivity entry"
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProductivityRequest'
+      responses:
+        '201':
+          description: Productivity entry created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductivityEntry'
+        '400':
+          description: Bad request
+        '401':
+          description: Unauthorized
+        '500':
+          description: Internal server error
+
+  /v1/productivities/{id}:
+    get:
+      tags: [Productivity]
+      summary: Get Productivity Entry
+      description: "Get a specific productivity entry by ID"
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Productivity entry ID
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Productivity entry
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductivityEntry'
+        '404':
+          description: Not found
+        '401':
+          description: Unauthorized
+
+    delete:
+      tags: [Productivity]
+      summary: Delete Productivity Entry
+      description: Delete a productivity entry
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Productivity entry ID
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Successfully deleted
+        '404':
+          description: Not found
+        '401':
+          description: Unauthorized
+
+  # Chatbot Endpoints
+  /v1/chatbot:
+    get:
+      tags: [Chatbot]
+      summary: List Chatbot Sessions
+      description: Get list of chatbot sessions for the authenticated user
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: List of chatbot sessions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ChatbotSession'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+
+    post:
+      tags: [Chatbot]
+      summary: Create Chatbot Session
+      description: Create a new chatbot session
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateChatbotSessionRequest'
+      responses:
+        '201':
+          description: Chatbot session created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatbotSession'
+
+  /v1/chatbot/ask:
+    post:
+      tags: [Chatbot]
+      summary: Ask Chatbot
+      description: Ask a question to the chatbot
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AskChatbotRequest'
+      responses:
+        '200':
+          description: Chatbot response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AskChatbotResponse'
+
+  /v1/chatbot/{id}:
+    get:
+      tags: [Chatbot]
+      summary: Get Chatbot Session
+      description: Get a specific chatbot session
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Chatbot session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatbotSession'
+
+    delete:
+      tags: [Chatbot]
+      summary: Delete Chatbot Session
+      description: Delete a chatbot session
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Successfully deleted
+
+  # Analytics Endpoints
+  /v1/analytics/progress:
+    get:
+      tags: [Analytics]
+      summary: Get Progress Analytics
+      description: Get progress analytics for the authenticated user
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: period
+          in: query
+          description: Time period for analytics
+          schema:
+            type: string
+            enum: [week, month, quarter, year]
+            default: month
+      responses:
+        '200':
+          description: Progress analytics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProgressAnalytics'
+
+  /v1/analytics/streak:
+    get:
+      tags: [Analytics]
+      summary: Get Streak Analytics
+      description: Get streak analytics for the authenticated user
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Streak analytics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StreakAnalytics'
+
+  /v1/analytics/categories:
+    get:
+      tags: [Analytics]
+      summary: Get Category Analytics
+      description: Get category breakdown analytics
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: startDate
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: endDate
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Category analytics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CategoryAnalytics'
+
+  # User Profile Endpoints
+  /v1/users/profile:
+    get:
+      tags: [User]
+      summary: Get User Profile
+      description: Get the authenticated user's profile
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+
+    post:
+      tags: [User]
+      summary: Create User Profile
+      description: Create a user profile
+      security:
+        - BearerAuth: []
+      responses:
+        '201':
+          description: User profile created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+
+    put:
+      tags: [User]
+      summary: Update User Profile
+      description: Update the authenticated user's profile
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserProfileRequest'
+      responses:
+        '200':
+          description: User profile updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+
+    delete:
+      tags: [User]
+      summary: Delete User Profile
+      description: Delete the authenticated user's profile
+      security:
+        - BearerAuth: []
+      responses:
+        '204':
+          description: Successfully deleted
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token from Clerk authentication
+
+  schemas:
+    ProductivityEntry:
+      type: object
+      properties:
+        id:
+          type: string
+          example: "prod_123456789"
+        userId:
+          type: string
+          example: "user_123456789"
+        category:
+          type: string
+          enum: [kerja, belajar, baca_buku, journaling, memasak, olahraga, lainnya]
+          example: "kerja"
+        timeConsumed:
+          type: integer
+          description: Time consumed in minutes
+          example: 120
+        cycleCount:
+          type: integer
+          description: Number of cycles completed
+          example: 4
+        cycleMode:
+          type: string
+          enum: [pomodoro, quick_focus, free_timer, custom_timer]
+          example: "pomodoro"
+        description:
+          type: string
+          example: "Working on project documentation"
+        mood:
+          type: string
+          enum: [excited, focused, tired, motivated, stressed, relaxed]
+          example: "focused"
+        imageUrl:
+          type: string
+          example: "https://example.com/image.jpg"
+        startedAt:
+          type: string
+          format: date-time
+          example: "2024-01-15T09:00:00Z"
+        endedAt:
+          type: string
+          format: date-time
+          example: "2024-01-15T11:00:00Z"
+        createdAt:
+          type: string
+          format: date-time
+          example: "2024-01-15T11:00:00Z"
+        updatedAt:
+          type: string
+          format: date-time
+          example: "2024-01-15T11:00:00Z"
+
+    CreateProductivityRequest:
+      type: object
+      required: [category, timeConsumed, cycleCount, cycleMode]
+      properties:
+        category:
+          type: string
+          enum: [kerja, belajar, baca_buku, journaling, memasak, olahraga, lainnya]
+        timeConsumed:
+          type: integer
+          minimum: 1
+        cycleCount:
+          type: integer
+          minimum: 1
+        cycleMode:
+          type: string
+          enum: [pomodoro, quick_focus, free_timer, custom_timer]
+        description:
+          type: string
+        mood:
+          type: string
+          enum: [excited, focused, tired, motivated, stressed, relaxed]
+        imageUrl:
+          type: string
+        startedAt:
+          type: string
+          format: date-time
+        endedAt:
+          type: string
+          format: date-time
+
+    ChatbotSession:
+      type: object
+      properties:
+        id:
+          type: string
+          example: "chat_123456789"
+        userId:
+          type: string
+          example: "user_123456789"
+        title:
+          type: string
+          example: "Productivity Tips Discussion"
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatMessage'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    ChatMessage:
+      type: object
+      properties:
+        id:
+          type: string
+        role:
+          type: string
+          enum: [user, assistant]
+        content:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+
+    CreateChatbotSessionRequest:
+      type: object
+      required: [title, messages]
+      properties:
+        title:
+          type: string
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatMessage'
+
+    AskChatbotRequest:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+          example: "How can I improve my productivity?"
+
+    AskChatbotResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        sessionId:
+          type: string
+
+    ProgressAnalytics:
+      type: object
+      properties:
+        period:
+          type: string
+        totalSessions:
+          type: integer
+        totalHours:
+          type: number
+        byCategory:
+          type: object
+          additionalProperties:
+            type: integer
+
+    StreakAnalytics:
+      type: object
+      properties:
+        current:
+          type: integer
+        longest:
+          type: integer
+        lastActive:
+          type: string
+          format: date-time
+
+    CategoryAnalytics:
+      type: object
+      properties:
+        categories:
+          type: object
+          additionalProperties:
+            type: integer
+        range:
+          $ref: '#/components/schemas/TimeRange'
+
+    UserProfile:
+      type: object
+      properties:
+        id:
+          type: string
+        userId:
+          type: string
+        bio:
+          type: string
+        birthdate:
+          type: string
+          format: date
+        backgroundImage:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    UpdateUserProfileRequest:
+      type: object
+      properties:
+        bio:
+          type: string
+        birthdate:
+          type: string
+          format: date
+        backgroundImage:
+          type: string
+
+    Pagination:
+      type: object
+      properties:
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        total:
+          type: integer
+        totalPages:
+          type: integer
+
+    TimeRange:
+      type: object
+      properties:
+        start:
+          type: string
+          format: date-time
+        end:
+          type: string
+          format: date-time
+
+    ErrorResponse:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string

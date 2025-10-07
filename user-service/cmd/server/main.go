@@ -15,8 +15,8 @@ import (
 )
 
 type config struct {
-	Port           string `validate:"required"`
-	GCPProjectID   string `validate:"required"`
+	Port              string `validate:"required"`
+	GCPProjectID      string `validate:"required"`
 	FirestoreEmulator string `validate:"omitempty"`
 }
 
@@ -44,7 +44,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:          router,
+		Handler:           router,
 		ReadHeaderTimeout: 5 * time.Second,
 		WriteTimeout:      60 * time.Second,
 		IdleTimeout:       120 * time.Second,

@@ -13,6 +13,6 @@ type UserSynced struct {
 
 // UserDeleted is emitted when a user is removed from the system.
 type UserDeleted struct {
-	UserID   string    `json:"userId"`
+	UserID    string    `json:"userId"`
 	DeletedAt time.Time `json:"deletedAt"`
 }

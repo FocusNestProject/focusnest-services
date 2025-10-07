@@ -1,11 +1,19 @@
 openapi: 3.1.0
 info:
   title: FocusNest Activity Service
-  version: 0.0.1
+  version: 0.1.0
+servers:
+  - url: https://activity.focusnest.com
+    description: Production
+  - url: http://localhost:8080
+    description: Local development
 paths:
   /healthz:
     get:
       operationId: getHealth
+      summary: Health check
+      tags:
+        - system
       responses:
         "200":
           description: Service is healthy
@@ -13,19 +21,520 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthResponse"
-  /v1/activities:
+  /v1/productivities:
     get:
-      operationId: listActivities
+      operationId: listProductivities
+      summary: List productivity entries for the authenticated user
+      tags:
+        - productivity
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: month
+          description: Month to filter in ISO-8601 `YYYY-MM` format. Defaults to the current month in UTC.
+          schema:
+            type: string
+            pattern: "^[0-9]{4}-[0-9]{2}$"
+        - in: query
+          name: page
+          description: 1-based page number. Defaults to 1.
+          schema:
+            type: integer
+            minimum: 1
+        - in: query
+          name: pageSize
+          description: Page size (max 100). Defaults to 20.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
       responses:
         "200":
-          description: A list of activities
+          description: Paginated list of productivity entries
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/Activity"
+                $ref: "#/components/schemas/ListProductivitiesResponse"
+        "401":
+          description: Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    post:
+      operationId: createProductivity
+      summary: Create a productivity entry for the authenticated user
+      tags:
+        - productivity
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProductivityRequest"
+      responses:
+        "201":
+          description: Productivity entry created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Productivity"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/productivities/{id}:
+    get:
+      operationId: getProductivity
+      summary: Retrieve a productivity entry by ID
+      tags:
+        - productivity
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Productivity entry
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Productivity"
+        "401":
+          description: Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Entry not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deleteProductivity
+      summary: Delete a productivity entry by ID
+      tags:
+        - productivity
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Entry deleted successfully
+        "401":
+          description: Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Entry not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/chatbot:
+    get:
+      operationId: listChatbotSessions
+      summary: List chatbot conversation sessions for the authenticated user
+      tags:
+        - chatbot
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: page
+          description: 1-based page number. Defaults to 1.
+          schema:
+            type: integer
+            minimum: 1
+        - in: query
+          name: pageSize
+          description: Page size (max 100). Defaults to 20.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+      responses:
+        "200":
+          description: Paginated list of chatbot sessions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListChatbotSessionsResponse"
+        "401":
+          description: Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    post:
+      operationId: createChatbotSession
+      summary: Create a new chatbot conversation session
+      tags:
+        - chatbot
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateChatbotSessionRequest"
+      responses:
+        "201":
+          description: Chatbot session created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatbotSession"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/chatbot/ask:
+    post:
+      operationId: askChatbot
+      summary: Ask the chatbot a question
+      tags:
+        - chatbot
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AskChatbotRequest"
+      responses:
+        "200":
+          description: Chatbot response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AskChatbotResponse"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/chatbot/{id}:
+    get:
+      operationId: getChatbotSession
+      summary: Retrieve a chatbot session by ID
+      tags:
+        - chatbot
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Chatbot session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatbotSession"
+        "401":
+          description: Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Session not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deleteChatbotSession
+      summary: Delete a chatbot session by ID
+      tags:
+        - chatbot
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Session deleted successfully
+        "401":
+          description: Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Session not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/analytics/progress:
+    get:
+      operationId: getProgressAnalytics
+      summary: Get progress analytics for the authenticated user
+      tags:
+        - analytics
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: period
+          description: Time period for analytics (week, month, quarter, year, all)
+          schema:
+            type: string
+            enum: [week, month, quarter, year, all]
+        - in: query
+          name: category
+          description: Filter by category
+          schema:
+            type: string
+        - in: query
+          name: startDate
+          description: Start date in YYYY-MM-DD format
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: endDate
+          description: End date in YYYY-MM-DD format
+          schema:
+            type: string
+            format: date
+      responses:
+        "200":
+          description: Progress analytics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProgressAnalyticsResponse"
+        "401":
+          description: Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/analytics/streak:
+    get:
+      operationId: getStreakAnalytics
+      summary: Get streak analytics for the authenticated user
+      tags:
+        - analytics
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Streak analytics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StreakAnalyticsResponse"
+        "401":
+          description: Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/analytics/categories:
+    get:
+      operationId: getCategoryAnalytics
+      summary: Get category breakdown analytics for the authenticated user
+      tags:
+        - analytics
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: startDate
+          description: Start date in YYYY-MM-DD format
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: endDate
+          description: End date in YYYY-MM-DD format
+          schema:
+            type: string
+            format: date
+      responses:
+        "200":
+          description: Category analytics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CategoryAnalyticsResponse"
+        "401":
+          description: Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/users/profile:
+    get:
+      operationId: getUserProfile
+      summary: Get user profile
+      tags:
+        - user
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+        "401":
+          description: Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Profile not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    post:
+      operationId: createUserProfile
+      summary: Create user profile
+      tags:
+        - user
+      security:
+        - bearerAuth: []
+      responses:
+        "201":
+          description: User profile created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+        "401":
+          description: Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Profile already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    put:
+      operationId: updateUserProfile
+      summary: Update user profile
+      tags:
+        - user
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateUserProfileRequest"
+      responses:
+        "200":
+          description: User profile updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Profile not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deleteUserProfile
+      summary: Delete user profile
+      tags:
+        - user
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: Profile deleted successfully
+        "401":
+          description: Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Profile not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
   schemas:
     HealthResponse:
       type: object
@@ -36,12 +545,375 @@ components:
           type: string
         version:
           type: string
-    Activity:
+    ErrorResponse:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        requestId:
+          type: string
+      required:
+        - code
+        - message
+    Productivity:
       type: object
       properties:
         id:
           type: string
-        name:
+        userId:
           type: string
-        durationMinutes:
+        category:
+          type: string
+        timeConsumedMinutes:
           type: integer
+          minimum: 1
+        cycleMode:
+          type: string
+        cycleCount:
+          type: integer
+          minimum: 0
+        description:
+          type: string
+        mood:
+          type: string
+        imageUrl:
+          type: string
+          format: uri
+        startedAt:
+          type: string
+          format: date-time
+        endedAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - userId
+        - category
+        - timeConsumedMinutes
+        - createdAt
+        - updatedAt
+    CreateProductivityRequest:
+      type: object
+      properties:
+        category:
+          type: string
+        timeConsumedMinutes:
+          type: integer
+          minimum: 1
+        cycleMode:
+          type: string
+        cycleCount:
+          type: integer
+          minimum: 0
+        description:
+          type: string
+        mood:
+          type: string
+        imageUrl:
+          type: string
+          format: uri
+        startedAt:
+          type: string
+          format: date-time
+        endedAt:
+          type: string
+          format: date-time
+      required:
+        - category
+        - timeConsumedMinutes
+    ListProductivitiesResponse:
+      type: object
+      properties:
+        month:
+          type: string
+          description: Month requested in `YYYY-MM` format.
+        range:
+          type: object
+          properties:
+            start:
+              type: string
+              format: date-time
+            end:
+              type: string
+              format: date-time
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Productivity"
+        pagination:
+          type: object
+          properties:
+            page:
+              type: integer
+            pageSize:
+              type: integer
+            totalPages:
+              type: integer
+            totalItems:
+              type: integer
+            hasNext:
+              type: boolean
+          required:
+            - page
+            - pageSize
+            - totalPages
+            - totalItems
+            - hasNext
+      required:
+        - month
+        - range
+        - data
+        - pagination
+    ChatbotSession:
+      type: object
+      properties:
+        id:
+          type: string
+        userId:
+          type: string
+        title:
+          type: string
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChatMessage"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - userId
+        - title
+        - messages
+        - createdAt
+        - updatedAt
+    ChatMessage:
+      type: object
+      properties:
+        id:
+          type: string
+        role:
+          type: string
+          enum: [user, assistant]
+        content:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+      required:
+        - id
+        - role
+        - content
+        - timestamp
+    ListChatbotSessionsResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChatbotSession"
+        pagination:
+          type: object
+          properties:
+            page:
+              type: integer
+            pageSize:
+              type: integer
+            totalPages:
+              type: integer
+            totalItems:
+              type: integer
+            hasNext:
+              type: boolean
+          required:
+            - page
+            - pageSize
+            - totalPages
+            - totalItems
+            - hasNext
+      required:
+        - data
+        - pagination
+    CreateChatbotSessionRequest:
+      type: object
+      properties:
+        title:
+          type: string
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/CreateMessageRequest"
+      required:
+        - title
+        - messages
+    CreateMessageRequest:
+      type: object
+      properties:
+        role:
+          type: string
+          enum: [user, assistant]
+        content:
+          type: string
+      required:
+        - role
+        - content
+    AskChatbotRequest:
+      type: object
+      properties:
+        message:
+          type: string
+      required:
+        - message
+    AskChatbotResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        sessionId:
+          type: string
+      required:
+        - message
+        - sessionId
+    ProgressAnalyticsResponse:
+      type: object
+      properties:
+        period:
+          type: string
+        range:
+          type: object
+          properties:
+            start:
+              type: string
+              format: date-time
+            end:
+              type: string
+              format: date-time
+        stats:
+          type: object
+          properties:
+            timeConsumedMinutes:
+              type: integer
+            totalSessions:
+              type: integer
+            totalHours:
+              type: number
+            mostProductiveHours:
+              type: array
+              items:
+                type: integer
+            streak:
+              type: object
+              properties:
+                current:
+                  type: integer
+                longest:
+                  type: integer
+                lastActive:
+                  type: string
+                  format: date-time
+            byCategory:
+              type: object
+              additionalProperties:
+                type: integer
+            byPeriod:
+              type: object
+              additionalProperties:
+                type: object
+                properties:
+                  timeConsumedMinutes:
+                    type: integer
+                  totalSessions:
+                    type: integer
+                  totalHours:
+                    type: number
+                  byCategory:
+                    type: object
+                    additionalProperties:
+                      type: integer
+        generatedAt:
+          type: string
+          format: date-time
+      required:
+        - period
+        - range
+        - stats
+        - generatedAt
+    StreakAnalyticsResponse:
+      type: object
+      properties:
+        current:
+          type: integer
+        longest:
+          type: integer
+        lastActive:
+          type: string
+          format: date-time
+      required:
+        - current
+        - longest
+        - lastActive
+    CategoryAnalyticsResponse:
+      type: object
+      properties:
+        categories:
+          type: object
+          additionalProperties:
+            type: integer
+        range:
+          type: object
+          properties:
+            start:
+              type: string
+              format: date-time
+            end:
+              type: string
+              format: date-time
+      required:
+        - categories
+        - range
+    UserProfile:
+      type: object
+      properties:
+        id:
+          type: string
+        userId:
+          type: string
+        bio:
+          type: string
+        birthdate:
+          type: string
+          format: date
+        backgroundImage:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - userId
+        - createdAt
+        - updatedAt
+    UpdateUserProfileRequest:
+      type: object
+      properties:
+        bio:
+          type: string
+        birthdate:
+          type: string
+          format: date
+        backgroundImage:
+          type: string

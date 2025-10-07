@@ -33,3 +33,14 @@ Thumbs.db
 *.tmp
 *.bak
 
+# Environment variables
+.env
+.env.local
+.env.*.local
+*.env
+
+# Google Cloud credentials
+*-service-account.json
+service-account*.json
+credentials.json
+key.json
