@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22.x'
+          cache: true
+
+      - name: Verify go.work
+        run: |
+          grep -q "go 1.22" go.work
+
+      - name: Go fmt check
+        run: |
+          files=$(gofmt -l .)
+          if [ -n "$files" ]; then
+            echo "The following files are not gofmt'ed:" && echo "$files" && exit 1
+          fi
+
+      - name: Tidy modules
+        run: |
+          for m in activity-service gateway-api shared-libs analytics-service media-service session-service user-service webhook-service; do
+            (cd $m && go mod tidy)
+          done
+
+      - name: Vet and Build
+        run: |
+          set -e
+          for m in activity-service gateway-api shared-libs analytics-service media-service session-service user-service webhook-service; do
+            echo "== $m =="
+            (cd $m && go vet ./... && go build ./...)
+          done
+
+

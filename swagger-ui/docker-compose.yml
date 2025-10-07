@@ -1,0 +1,14 @@
+services:
+  swagger-ui:
+    image: swaggerapi/swagger-ui:latest
+    container_name: focusnest-swagger-ui
+    ports:
+      - "8089:8080"
+    environment:
+      - SWAGGER_JSON=/app/openapi.yaml
+      - SWAGGER_UI_DOC_EXPANSION=none
+      - SWAGGER_UI_OPERATION_ID_CLICK=true
+      - SWAGGER_UI_TRY_IT_OUT_ENABLED=true
+    volumes:
+      - ./openapi.yaml:/app/openapi.yaml:ro
+    restart: unless-stopped
