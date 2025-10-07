@@ -33,16 +33,16 @@ func newClerkVerifier(cfg Config) (Verifier, error) {
 }
 
 func (v *clerkVerifier) Verify(ctx context.Context, token string) (AuthenticatedUser, error) {
-    // Build parse options including issuer/audience validation when configured
-    options := []jwt.ParserOption{jwt.WithLeeway(5 * time.Second)}
-    if v.audience != "" {
-        options = append(options, jwt.WithAudience(v.audience))
-    }
-    if v.issuer != "" {
-        options = append(options, jwt.WithIssuer(v.issuer))
-    }
+	// Build parse options including issuer/audience validation when configured
+	options := []jwt.ParserOption{jwt.WithLeeway(5 * time.Second)}
+	if v.audience != "" {
+		options = append(options, jwt.WithAudience(v.audience))
+	}
+	if v.issuer != "" {
+		options = append(options, jwt.WithIssuer(v.issuer))
+	}
 
-    t, err := jwt.Parse(token, v.jwks.Keyfunc, options...)
+	t, err := jwt.Parse(token, v.jwks.Keyfunc, options...)
 	if err != nil {
 		return AuthenticatedUser{}, fmt.Errorf("token verification failed: %w", err)
 	}

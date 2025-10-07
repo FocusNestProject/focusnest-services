@@ -44,4 +44,12 @@ jobs:
             (cd $m && go vet ./... && go build ./...)
           done
 
+      - name: Merge OpenAPI (All Services)
+        run: |
+          docker run --rm -v ${{ github.workspace }}:/work -w /work python:3.11-alpine sh -lc "pip install pyyaml >/dev/null 2>&1 && python scripts/merge_openapi.py swagger-ui/combined.yaml gateway-api/api/openapi.yaml activity-service/api/openapi.yaml user-service/api/openapi.yaml session-service/api/openapi.yaml media-service/api/openapi.yaml analytics-service/api/openapi.yaml webhook-service/api/openapi.yaml"
+
+      - name: Validate merged OpenAPI
+        run: |
+          docker run --rm -v ${{ github.workspace }}:/local openapitools/openapi-generator-cli validate -i /local/swagger-ui/combined.yaml
+
 

@@ -1,0 +1,20 @@
+urls:
+  - url: /activity/openapi.yaml
+    name: Activity Service
+  - url: /gateway/openapi.yaml
+    name: Gateway API
+  - url: /user/openapi.yaml
+    name: User Service
+  - url: /session/openapi.yaml
+    name: Session Service
+  - url: /media/openapi.yaml
+    name: Media Service
+  - url: /analytics/openapi.yaml
+    name: Analytics Service
+  - url: /webhook/openapi.yaml
+    name: Webhook Service
+  - url: /combined.yaml
+    name: All Services (Merged)
+deepLinking: true
+tryItOutEnabled: true
+

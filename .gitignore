@@ -33,6 +33,9 @@ Thumbs.db
 *.tmp
 *.bak
 
+# Generated API docs
+swagger-ui/combined.yaml
+
 # Environment variables
 .env
 .env.local

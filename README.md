@@ -2,7 +2,7 @@
 
 Production-ready microservices architecture for the FocusNest productivity tracking application.
 
-## 🏗️ Architecture
+## Architecture
 
 ```
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
@@ -18,7 +18,7 @@ Production-ready microservices architecture for the FocusNest productivity track
                               └───▶ Webhook Service (Port 8086)
 ```
 
-## 🚀 Services
+## Services
 
 | Service | Port | Purpose |
 |---------|------|---------|
@@ -31,7 +31,7 @@ Production-ready microservices architecture for the FocusNest productivity track
 | **Webhook Service** | `8086` | Webhook handling |
 | **Firebase Emulator** | `8088` | Firestore database (development) |
 
-## 🔧 Quick Start
+## Quick Start
 
 ### Prerequisites
 - Docker & Docker Compose
@@ -67,7 +67,7 @@ docker-compose up -d
 - **Main Gateway**: `http://localhost:8080`
 - **Health Check**: `http://localhost:8080/healthz`
 
-## 📱 Frontend Integration
+## Frontend Integration
 
 ```javascript
 // Your Expo app configuration
@@ -82,7 +82,7 @@ const response = await fetch(`${API_BASE_URL}/v1/productivities`, {
 });
 ```
 
-## 🏗️ Development
+## Development
 
 ### Project Structure
 ```
@@ -107,35 +107,33 @@ docker-compose build gateway-api
 docker-compose build
 ```
 
-## 🔐 Authentication
+## Authentication
 
 The system uses **Clerk** for JWT-based authentication:
 - JWT tokens are verified at the gateway level
 - User context is automatically injected into downstream services
 - All protected routes require valid authentication
 
-## 📊 Database
+## Database
 
 - **Development**: Firebase Emulator (Firestore)
 - **Production**: Google Cloud Firestore
-- **Configuration**: See `FIRESTORE_SETUP.md`
 
-## 🚀 Production Deployment
+## API Documentation
 
-For production deployment, see:
-- `README_DOCKER.md` - Docker deployment guide
-- `FIRESTORE_SETUP.md` - Database setup
+- Per-service OpenAPI specs in each `api/` folder
+- Swagger UI (multi-spec) on http://localhost:8089
+- Generate merged spec: `make docs` (optional `SERVER=http://localhost:8080`)
 
-## 📋 API Documentation
+## Tooling
 
-- **OpenAPI Specs**: Available in each service's `api/` directory
-- **Postman Collection**: `postman/FocusNest.postman_collection.json`
+- `make docs` merges specs -> `swagger-ui/combined.yaml` (gitignored)
+- `make swagger` starts Swagger UI
 
-## 🛠️ Scripts
+## Scripts
 
 - `start.sh` - Start all services
 - `test-services.sh` - Test service health
-- `scripts/e2e.sh` - End-to-end testing
 
 ## 📝 License
 
