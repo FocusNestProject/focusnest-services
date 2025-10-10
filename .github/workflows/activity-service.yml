@@ -67,6 +67,12 @@ jobs:
           echo "Service deployed to: $URL"
           echo "url=$URL" >> $GITHUB_OUTPUT
       
+      - name: Update GitHub Variable
+        run: |
+          gh variable set ACTIVITY_SERVICE_URL --body "${{ steps.url.outputs.url }}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
       - name: Summary
         run: |
           echo "## ✅ Deployment Successful" >> $GITHUB_STEP_SUMMARY
@@ -75,3 +81,5 @@ jobs:
           echo "**URL:** ${{ steps.url.outputs.url }}" >> $GITHUB_STEP_SUMMARY
           echo "**Region:** $REGION" >> $GITHUB_STEP_SUMMARY
           echo "**Image:** gcr.io/$PROJECT_ID/$SERVICE_NAME" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✓ Updated GitHub variable: ACTIVITY_SERVICE_URL" >> $GITHUB_STEP_SUMMARY
