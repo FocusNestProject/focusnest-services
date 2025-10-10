@@ -227,18 +227,18 @@ func proxyHandler(targetURL, pathPrefix string, logger *slog.Logger) http.Handle
 
 		// Copy only safe headers (skip Host, Authorization, and connection headers)
 		skipHeaders := map[string]bool{
-			"Host":                  true,
-			"Authorization":         true,
-			"Connection":            true,
-			"Keep-Alive":            true,
-			"Proxy-Authenticate":    true,
-			"Proxy-Authorization":   true,
-			"Te":                    true,
-			"Trailer":               true,
-			"Transfer-Encoding":     true,
-			"Upgrade":               true,
+			"Host":                true,
+			"Authorization":       true,
+			"Connection":          true,
+			"Keep-Alive":          true,
+			"Proxy-Authenticate":  true,
+			"Proxy-Authorization": true,
+			"Te":                  true,
+			"Trailer":             true,
+			"Transfer-Encoding":   true,
+			"Upgrade":             true,
 		}
-		
+
 		for key, values := range r.Header {
 			if skipHeaders[key] {
 				continue
