@@ -153,14 +153,10 @@ gcloud builds submit --tag gcr.io/YOUR_PROJECT_ID/activity-service
 
 ```bash
 gcloud run deploy activity-service \
-  --image gcr.io/YOUR_PROJECT_ID/activity-service \
+  --image gcr.io/focusnest-470308/activity-service \
   --platform managed \
-  --region us-central1 \
-  --allow-unauthenticated \
-  --set-env-vars="GCP_PROJECT_ID=YOUR_PROJECT_ID,DATASTORE=firestore,AUTH_MODE=clerk" \
-  --set-env-vars="CLERK_JWKS_URL=https://your-domain.clerk.accounts.dev/.well-known/jwks.json" \
-  --set-env-vars="CLERK_ISSUER=https://your-domain.clerk.accounts.dev" \
-  --set-env-vars="GCS_BUCKET=your-bucket-name"
+  --region asia-southeast2 \
+  --allow-unauthenticated
 ```
 
 ## Image Upload Flow

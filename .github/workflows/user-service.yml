@@ -57,8 +57,28 @@ jobs:
             --set-env-vars="AUTH_MODE=noop"
       
       - name: Get Service URL
+        id: url
         run: |
-          gcloud run services describe $SERVICE_NAME \
+          URL=$(gcloud run services describe $SERVICE_NAME \
             --platform managed \
             --region $REGION \
-            --format 'value(status.url)'
+            --format 'value(status.url)')
+          echo "Service deployed to: $URL"
+          echo "url=$URL" >> $GITHUB_OUTPUT
+      
+      - name: Update GitHub Variable
+        run: |
+          gh variable set USER_SERVICE_URL --body "${{ steps.url.outputs.url }}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Summary
+        run: |
+          echo "## ✅ Deployment Successful" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Service:** $SERVICE_NAME" >> $GITHUB_STEP_SUMMARY
+          echo "**URL:** ${{ steps.url.outputs.url }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Region:** $REGION" >> $GITHUB_STEP_SUMMARY
+          echo "**Image:** gcr.io/$PROJECT_ID/$SERVICE_NAME" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✓ Updated GitHub variable: USER_SERVICE_URL" >> $GITHUB_STEP_SUMMARY
