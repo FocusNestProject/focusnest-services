@@ -56,12 +56,12 @@ jobs:
             --set-env-vars="AUTH_MODE=clerk" \
             --set-env-vars="CLERK_JWKS_URL=${{ secrets.CLERK_JWKS_URL }}" \
             --set-env-vars="CLERK_ISSUER=${{ secrets.CLERK_ISSUER }}" \
-            --set-env-vars="ACTIVITY_SERVICE_URL=${{ vars.ACTIVITY_SERVICE_URL }}" \
-            --set-env-vars="USER_SERVICE_URL=${{ vars.USER_SERVICE_URL }}" \
-            --set-env-vars="SESSION_SERVICE_URL=${{ vars.SESSION_SERVICE_URL }}" \
-            --set-env-vars="MEDIA_SERVICE_URL=${{ vars.MEDIA_SERVICE_URL }}" \
-            --set-env-vars="ANALYTICS_SERVICE_URL=${{ vars.ANALYTICS_SERVICE_URL }}" \
-            --set-env-vars="WEBHOOK_SERVICE_URL=${{ vars.WEBHOOK_SERVICE_URL }}"
+            --set-env-vars="ACTIVITY_URL=${{ vars.ACTIVITY_SERVICE_URL }}" \
+            --set-env-vars="USER_URL=${{ vars.USER_SERVICE_URL }}" \
+            --set-env-vars="SESSION_URL=${{ vars.SESSION_SERVICE_URL }}" \
+            --set-env-vars="MEDIA_URL=${{ vars.MEDIA_SERVICE_URL }}" \
+            --set-env-vars="ANALYTICS_URL=${{ vars.ANALYTICS_SERVICE_URL }}" \
+            --set-env-vars="WEBHOOK_URL=${{ vars.WEBHOOK_SERVICE_URL }}"
       
       - name: Get Service URL
         id: url
