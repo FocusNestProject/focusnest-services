@@ -76,6 +76,12 @@ func Middleware(verifier Verifier) func(http.Handler) http.Handler {
 }
 
 func tokenFromRequest(r *http.Request) (string, error) {
+	// Check for X-User-ID header first (for internal service-to-service calls)
+	if userID := r.Header.Get("X-User-ID"); userID != "" {
+		return userID, nil
+	}
+
+	// Fall back to Authorization Bearer token
 	header := r.Header.Get("Authorization")
 	if header == "" {
 		return "", errMissingAuthHeader
