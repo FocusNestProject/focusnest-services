@@ -201,10 +201,11 @@ func proxyHandler(targetURL, pathPrefix string, logger *slog.Logger) http.Handle
 
 		// Create authenticated HTTP client for Cloud Run service-to-service calls
 		ctx := r.Context()
-		// The audience for the token MUST be the full URL of the request.
-		client, err := idtoken.NewClient(ctx, target)
+		// The audience for ID token must be the base service URL (without path/query)
+		client, err := idtoken.NewClient(ctx, targetURL)
 		if err != nil {
-			http.Error(w, "Internal Server Error creating auth client", http.StatusInternalServerError)
+			logger.Error("failed to create auth client", "error", err, "target", target, "audience", targetURL)
+			http.Error(w, fmt.Sprintf("Internal Server Error creating auth client: %v", err), http.StatusInternalServerError)
 			return
 		}
 
