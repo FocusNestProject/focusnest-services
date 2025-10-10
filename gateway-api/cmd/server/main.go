@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -199,12 +200,20 @@ func proxyHandler(targetURL, pathPrefix string, logger *slog.Logger) http.Handle
 
 		logger.Info("proxy target", "url", target, "method", r.Method, "original_path", r.URL.Path, "wildcard", wildcardPath)
 
+		// Parse targetURL to get origin (scheme + host only) for ID token audience
+		parsedURL, err := url.Parse(targetURL)
+		if err != nil {
+			logger.Error("invalid target URL", "error", err, "targetURL", targetURL)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+		audience := parsedURL.Scheme + "://" + parsedURL.Host
+
 		// Create authenticated HTTP client for Cloud Run service-to-service calls
 		ctx := r.Context()
-		// The audience for ID token must be the base service URL (without path/query)
-		client, err := idtoken.NewClient(ctx, targetURL)
+		client, err := idtoken.NewClient(ctx, audience)
 		if err != nil {
-			logger.Error("failed to create auth client", "error", err, "target", target, "audience", targetURL)
+			logger.Error("failed to create auth client", "error", err, "audience", audience)
 			http.Error(w, fmt.Sprintf("Internal Server Error creating auth client: %v", err), http.StatusInternalServerError)
 			return
 		}
@@ -216,8 +225,24 @@ func proxyHandler(targetURL, pathPrefix string, logger *slog.Logger) http.Handle
 			return
 		}
 
-		// Copy headers from original request
+		// Copy only safe headers (skip Host, Authorization, and connection headers)
+		skipHeaders := map[string]bool{
+			"Host":                  true,
+			"Authorization":         true,
+			"Connection":            true,
+			"Keep-Alive":            true,
+			"Proxy-Authenticate":    true,
+			"Proxy-Authorization":   true,
+			"Te":                    true,
+			"Trailer":               true,
+			"Transfer-Encoding":     true,
+			"Upgrade":               true,
+		}
+		
 		for key, values := range r.Header {
+			if skipHeaders[key] {
+				continue
+			}
 			for _, value := range values {
 				req.Header.Add(key, value)
 			}
