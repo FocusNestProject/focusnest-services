@@ -79,48 +79,71 @@ func main() {
 
 			// Activity Service Routes
 			r.Route("/v1/productivities", func(r chi.Router) {
-				r.Get("/*", proxyHandler(cfg.ActivityURL, "/v1/productivities"))
-				r.Post("/*", proxyHandler(cfg.ActivityURL, "/v1/productivities"))
-				r.Delete("/*", proxyHandler(cfg.ActivityURL, "/v1/productivities"))
+				h := proxyHandler(cfg.ActivityURL, "/v1/productivities")
+				r.Get("/", h)
+				r.Post("/", h)
+				r.Get("/*", h)
+				r.Delete("/*", h)
 			})
 
 			// Chatbot Routes
 			r.Route("/v1/chatbot", func(r chi.Router) {
-				r.Get("/*", proxyHandler(cfg.ActivityURL, "/v1/chatbot"))
-				r.Post("/*", proxyHandler(cfg.ActivityURL, "/v1/chatbot"))
+				h := proxyHandler(cfg.ActivityURL, "/v1/chatbot")
+				r.Get("/", h)
+				r.Post("/", h)
+				r.Get("/*", h)
+				r.Post("/*", h)
 			})
 
 			// Analytics Routes
 			r.Route("/v1/analytics", func(r chi.Router) {
-				r.Get("/*", proxyHandler(cfg.ActivityURL, "/v1/analytics"))
+				h := proxyHandler(cfg.ActivityURL, "/v1/analytics")
+				r.Get("/", h)
+				r.Get("/*", h)
 			})
 
 			// User Profile Routes
 			r.Route("/v1/users", func(r chi.Router) {
-				r.Get("/*", proxyHandler(cfg.ActivityURL, "/v1/users"))
-				r.Post("/*", proxyHandler(cfg.ActivityURL, "/v1/users"))
-				r.Put("/*", proxyHandler(cfg.ActivityURL, "/v1/users"))
-				r.Delete("/*", proxyHandler(cfg.ActivityURL, "/v1/users"))
+				h := proxyHandler(cfg.ActivityURL, "/v1/users")
+				r.Get("/", h)
+				r.Post("/", h)
+				r.Put("/", h)
+				r.Delete("/", h)
+				r.Get("/*", h)
+				r.Post("/*", h)
+				r.Put("/*", h)
+				r.Delete("/*", h)
 			})
 
 			// Session Service Routes
 			r.Route("/v1/sessions", func(r chi.Router) {
-				r.Get("/*", proxyHandler(cfg.SessionURL, "/v1/sessions"))
-				r.Post("/*", proxyHandler(cfg.SessionURL, "/v1/sessions"))
-				r.Put("/*", proxyHandler(cfg.SessionURL, "/v1/sessions"))
-				r.Delete("/*", proxyHandler(cfg.SessionURL, "/v1/sessions"))
+				h := proxyHandler(cfg.SessionURL, "/v1/sessions")
+				r.Get("/", h)
+				r.Post("/", h)
+				r.Put("/", h)
+				r.Delete("/", h)
+				r.Get("/*", h)
+				r.Post("/*", h)
+				r.Put("/*", h)
+				r.Delete("/*", h)
 			})
 
 			// Media Service Routes
 			r.Route("/v1/media", func(r chi.Router) {
-				r.Get("/*", proxyHandler(cfg.MediaURL, "/v1/media"))
-				r.Post("/*", proxyHandler(cfg.MediaURL, "/v1/media"))
-				r.Delete("/*", proxyHandler(cfg.MediaURL, "/v1/media"))
+				h := proxyHandler(cfg.MediaURL, "/v1/media")
+				r.Get("/", h)
+				r.Post("/", h)
+				r.Delete("/", h)
+				r.Get("/*", h)
+				r.Post("/*", h)
+				r.Delete("/*", h)
 			})
 
 			// Webhook Service Routes
 			r.Route("/v1/webhooks", func(r chi.Router) {
-				r.Post("/*", proxyHandler(cfg.WebhookURL, "/v1/webhooks"))
+				h := proxyHandler(cfg.WebhookURL, "/v1/webhooks")
+				r.Post("/", h)
+				r.Post("/*", h)
 			})
 		})
 	})
@@ -157,7 +180,18 @@ func proxyMiddleware(cfg config, logger *slog.Logger) func(http.Handler) http.Ha
 func proxyHandler(targetURL, pathPrefix string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Create a new request to the target service
-		target := targetURL + r.URL.Path
+		// Chi strips the matched route prefix, so we need to reconstruct the full path
+		wildcardPath := chi.URLParam(r, "*")
+		fullPath := pathPrefix
+		if wildcardPath != "" {
+			fullPath = pathPrefix + "/" + wildcardPath
+		}
+		target := targetURL + fullPath
+		
+		// Add query parameters if present
+		if r.URL.RawQuery != "" {
+			target += "?" + r.URL.RawQuery
+		}
 
 		// Create authenticated HTTP client for Cloud Run service-to-service calls
 		ctx := r.Context()
