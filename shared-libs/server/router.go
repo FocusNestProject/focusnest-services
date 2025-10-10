@@ -20,7 +20,7 @@ func NewRouter(service string, register func(r chi.Router)) *chi.Mux {
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(60 * time.Second))
 
-	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+	r.Get("/health", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, dto.HealthResponse{Status: "ok", Service: service, Version: "v0.0.1"})
 	})
 

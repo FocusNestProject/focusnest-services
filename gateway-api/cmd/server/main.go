@@ -66,13 +66,6 @@ func main() {
 	}
 
 	router := sharedserver.NewRouter("gateway-api", func(r chi.Router) {
-		// Health check endpoint
-		r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusOK)
-			fmt.Fprintf(w, `{"status":"ok","service":"gateway-api","version":"1.0.0"}`)
-		})
-
 		// Public routes (no authentication required)
 		r.Route("/public", func(r chi.Router) {
 			// Add any public endpoints here if needed
