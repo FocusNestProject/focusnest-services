@@ -77,73 +77,75 @@ func main() {
 			r.Use(sharedauth.Middleware(verifier))
 			r.Use(proxyMiddleware(cfg, logger))
 
-			// Activity Service Routes
-			r.Route("/v1/productivities", func(r chi.Router) {
-				h := proxyHandler(cfg.ActivityURL, "/v1/productivities", logger)
-				r.Get("/", h)
-				r.Post("/", h)
-				r.Get("/*", h)
-				r.Delete("/*", h)
-			})
+			r.Route("/v1", func(r chi.Router) {
+				// Activity Service Routes
+				r.Route("/productivities", func(r chi.Router) {
+					h := proxyHandler(cfg.ActivityURL, "/v1/productivities", logger)
+					r.Get("/", h)
+					r.Post("/", h)
+					r.Get("/*", h)
+					r.Delete("/*", h)
+				})
 
-			// Chatbot Routes
-			r.Route("/v1/chatbot", func(r chi.Router) {
-				h := proxyHandler(cfg.ActivityURL, "/v1/chatbot", logger)
-				r.Get("/", h)
-				r.Post("/", h)
-				r.Get("/*", h)
-				r.Post("/*", h)
-			})
+				// Chatbot Routes
+				r.Route("/chatbot", func(r chi.Router) {
+					h := proxyHandler(cfg.ActivityURL, "/v1/chatbot", logger)
+					r.Get("/", h)
+					r.Post("/", h)
+					r.Get("/*", h)
+					r.Post("/*", h)
+				})
 
-			// Analytics Routes
-			r.Route("/v1/analytics", func(r chi.Router) {
-				h := proxyHandler(cfg.ActivityURL, "/v1/analytics", logger)
-				r.Get("/", h)
-				r.Get("/*", h)
-			})
+				// Analytics Routes
+				r.Route("/analytics", func(r chi.Router) {
+					h := proxyHandler(cfg.ActivityURL, "/v1/analytics", logger)
+					r.Get("/", h)
+					r.Get("/*", h)
+				})
 
-			// User Profile Routes
-			r.Route("/v1/users", func(r chi.Router) {
-				h := proxyHandler(cfg.ActivityURL, "/v1/users", logger)
-				r.Get("/", h)
-				r.Post("/", h)
-				r.Put("/", h)
-				r.Delete("/", h)
-				r.Get("/*", h)
-				r.Post("/*", h)
-				r.Put("/*", h)
-				r.Delete("/*", h)
-			})
+				// User Profile Routes
+				r.Route("/users", func(r chi.Router) {
+					h := proxyHandler(cfg.UserURL, "/v1/users", logger)
+					r.Get("/", h)
+					r.Post("/", h)
+					r.Put("/", h)
+					r.Delete("/", h)
+					r.Get("/*", h)
+					r.Post("/*", h)
+					r.Put("/*", h)
+					r.Delete("/*", h)
+				})
 
-			// Session Service Routes
-			r.Route("/v1/sessions", func(r chi.Router) {
-				h := proxyHandler(cfg.SessionURL, "/v1/sessions", logger)
-				r.Get("/", h)
-				r.Post("/", h)
-				r.Put("/", h)
-				r.Delete("/", h)
-				r.Get("/*", h)
-				r.Post("/*", h)
-				r.Put("/*", h)
-				r.Delete("/*", h)
-			})
+				// Session Service Routes
+				r.Route("/sessions", func(r chi.Router) {
+					h := proxyHandler(cfg.SessionURL, "/v1/sessions", logger)
+					r.Get("/", h)
+					r.Post("/", h)
+					r.Put("/", h)
+					r.Delete("/", h)
+					r.Get("/*", h)
+					r.Post("/*", h)
+					r.Put("/*", h)
+					r.Delete("/*", h)
+				})
 
-			// Media Service Routes
-			r.Route("/v1/media", func(r chi.Router) {
-				h := proxyHandler(cfg.MediaURL, "/v1/media", logger)
-				r.Get("/", h)
-				r.Post("/", h)
-				r.Delete("/", h)
-				r.Get("/*", h)
-				r.Post("/*", h)
-				r.Delete("/*", h)
-			})
+				// Media Service Routes
+				r.Route("/media", func(r chi.Router) {
+					h := proxyHandler(cfg.MediaURL, "/v1/media", logger)
+					r.Get("/", h)
+					r.Post("/", h)
+					r.Delete("/", h)
+					r.Get("/*", h)
+					r.Post("/*", h)
+					r.Delete("/*", h)
+				})
 
-			// Webhook Service Routes
-			r.Route("/v1/webhooks", func(r chi.Router) {
-				h := proxyHandler(cfg.WebhookURL, "/v1/webhooks", logger)
-				r.Post("/", h)
-				r.Post("/*", h)
+				// Webhook Service Routes
+				r.Route("/webhooks", func(r chi.Router) {
+					h := proxyHandler(cfg.WebhookURL, "/v1/webhooks", logger)
+					r.Post("/", h)
+					r.Post("/*", h)
+				})
 			})
 		})
 	})
