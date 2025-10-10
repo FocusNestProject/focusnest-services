@@ -35,7 +35,6 @@ jobs:
       - name: Build Docker image
         run: |
           gcloud builds submit \
-            --tag gcr.io/$PROJECT_ID/$SERVICE_NAME \
             --timeout=10m \
             --config=gateway-api/cloudbuild.yaml
       
