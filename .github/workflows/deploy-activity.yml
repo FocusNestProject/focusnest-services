@@ -1,0 +1,63 @@
+name: Deploy Activity Service
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - 'activity-service/**'
+      - 'shared-libs/**'
+      - '.github/workflows/deploy-activity.yml'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    env:
+      SERVICE_NAME: activity-service
+      REGION: ${{ vars.GCP_REGION }}
+      PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+      AR_REPO: focusnest
+      IMAGE: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/focusnest/activity-service:latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up gcloud auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
+
+      - name: Set up gcloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+
+      - name: Configure Artifact Registry Docker auth
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
+      - name: Build image
+        run: |
+          docker build -t $IMAGE \
+            -f activity-service/Dockerfile \
+            .
+
+      - name: Push image
+        run: docker push $IMAGE
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy $SERVICE_NAME \
+            --image $IMAGE \
+            --platform managed \
+            --region $REGION \
+            --allow-unauthenticated \
+            --port 8080 \
+            --set-env-vars "AUTH_MODE=clerk,DATASTORE=firestore,CLERK_JWKS_URL=${{ secrets.CLERK_JWKS_URL }},CLERK_AUDIENCE=${{ secrets.CLERK_AUDIENCE }},CLERK_ISSUER=${{ secrets.CLERK_ISSUER }},GCP_PROJECT_ID=${{ vars.GCP_PROJECT_ID }}"
+
+

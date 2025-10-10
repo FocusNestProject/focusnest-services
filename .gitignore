@@ -32,6 +32,8 @@ Thumbs.db
 *.log
 *.tmp
 *.bak
+nohup.out
+server.log
 
 # Generated API docs
 swagger-ui/combined.yaml
@@ -47,3 +49,5 @@ swagger-ui/combined.yaml
 service-account*.json
 credentials.json
 key.json
+github-sa-key.json
+*-sa-key.json
