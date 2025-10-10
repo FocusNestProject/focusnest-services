@@ -10,7 +10,7 @@
         },
         {
           "fieldPath": "anchor",
-          "order": "ASCENDING"
+          "order": "DESCENDING"
         },
         {
           "fieldPath": "createdAt",
