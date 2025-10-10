@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -220,13 +222,36 @@ func proxyHandler(targetURL, pathPrefix string, logger *slog.Logger) http.Handle
 			}
 		}
 
+		// Log the complete outgoing request details for debugging
+		var headersBuilder strings.Builder
+		for key, values := range req.Header {
+			headersBuilder.WriteString(fmt.Sprintf("%s: %s\n", key, strings.Join(values, ", ")))
+		}
+		logger.Info("sending request to downstream service",
+			"target", target,
+			"method", req.Method,
+			"headers", headersBuilder.String(),
+		)
+
 		// Make request to target service
 		resp, err := client.Do(req)
 		if err != nil {
+			logger.Error("failed to make request to downstream service", "error", err, "target", target)
 			http.Error(w, "Service Unavailable", http.StatusServiceUnavailable)
 			return
 		}
 		defer resp.Body.Close()
+
+		// Read the body of the response
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			logger.Error("failed to read downstream response body", "error", err, "target", target)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+
+		// Log the downstream response details
+		logger.Info("received response from downstream", "target", target, "status_code", resp.StatusCode, "body", string(body))
 
 		// Copy response headers
 		for key, values := range resp.Header {
@@ -235,19 +260,8 @@ func proxyHandler(targetURL, pathPrefix string, logger *slog.Logger) http.Handle
 			}
 		}
 
-		// Set status code and copy body
+		// Set status code and write the body we already read
 		w.WriteHeader(resp.StatusCode)
-
-		// Copy response body
-		buf := make([]byte, 32*1024)
-		for {
-			n, err := resp.Body.Read(buf)
-			if n > 0 {
-				w.Write(buf[:n])
-			}
-			if err != nil {
-				break
-			}
-		}
+		w.Write(body)
 	}
 }
