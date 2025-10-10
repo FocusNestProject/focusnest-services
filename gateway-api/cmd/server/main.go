@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"google.golang.org/api/idtoken"
 
 	sharedauth "github.com/focusnest/shared-libs/auth"
 	"github.com/focusnest/shared-libs/envconfig"
@@ -158,13 +159,16 @@ func proxyHandler(targetURL, pathPrefix string) http.HandlerFunc {
 		// Create a new request to the target service
 		target := targetURL + r.URL.Path
 
-		// Create HTTP client with timeout
-		client := &http.Client{
-			Timeout: 30 * time.Second,
+		// Create authenticated HTTP client for Cloud Run service-to-service calls
+		ctx := r.Context()
+		client, err := idtoken.NewClient(ctx, targetURL)
+		if err != nil {
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
 		}
 
 		// Create new request
-		req, err := http.NewRequest(r.Method, target, r.Body)
+		req, err := http.NewRequestWithContext(ctx, r.Method, target, r.Body)
 		if err != nil {
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			return
