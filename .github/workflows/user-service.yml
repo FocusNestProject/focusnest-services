@@ -46,7 +46,7 @@ jobs:
             --platform managed \
             --region $REGION \
             --no-allow-unauthenticated \
-            --ingress internal-and-cloud-load-balancing \
+            --ingress all \
             --port 8080 \
             --memory 512Mi \
             --max-instances 10 \
