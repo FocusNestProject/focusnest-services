@@ -3,6 +3,7 @@ package httpapi
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -222,6 +223,8 @@ func respondProductivityServiceError(w http.ResponseWriter, err error) {
 		}
 		writeError(w, http.StatusBadRequest, message)
 	default:
+		// Log the actual error for debugging
+		fmt.Printf("ERROR: Unhandled productivity service error: %v\n", err)
 		writeError(w, http.StatusInternalServerError, "internal server error")
 	}
 }
