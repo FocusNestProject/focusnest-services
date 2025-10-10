@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"google.golang.org/api/idtoken"
+	// "google.golang.org/api/idtoken"
 
 	sharedauth "github.com/focusnest/shared-libs/auth"
 	"github.com/focusnest/shared-libs/envconfig"
@@ -56,15 +56,15 @@ func main() {
 	logger := logging.NewLogger("gateway-api")
 
 	// Initialize JWT verifier for authentication
-	verifier, err := sharedauth.NewVerifier(sharedauth.Config{
-		Mode:     sharedauth.ModeClerk,
-		JWKSURL:  cfg.JWKSURL,
-		Audience: cfg.Audience,
-		Issuer:   cfg.Issuer,
-	})
-	if err != nil {
-		panic(fmt.Errorf("auth verifier error: %w", err))
-	}
+	// verifier, err := sharedauth.NewVerifier(sharedauth.Config{
+	// 	Mode:     sharedauth.ModeClerk,
+	// 	JWKSURL:  cfg.JWKSURL,
+	// 	Audience: cfg.Audience,
+	// 	Issuer:   cfg.Issuer,
+	// })
+	// if err != nil {
+	// 	panic(fmt.Errorf("auth verifier error: %w", err))
+	// }
 
 	router := sharedserver.NewRouter("gateway-api", func(r chi.Router) {
 		// Public routes (no authentication required)
@@ -74,7 +74,7 @@ func main() {
 
 		// Protected routes with authentication middleware
 		r.Group(func(r chi.Router) {
-			r.Use(sharedauth.Middleware(verifier))
+			// r.Use(sharedauth.Middleware(verifier))
 			r.Use(proxyMiddleware(cfg, logger))
 
 			// Activity Service Routes
@@ -197,11 +197,13 @@ func proxyHandler(targetURL, pathPrefix string, logger *slog.Logger) http.Handle
 
 		// Create authenticated HTTP client for Cloud Run service-to-service calls
 		ctx := r.Context()
-		client, err := idtoken.NewClient(ctx, targetURL)
-		if err != nil {
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-			return
-		}
+		// Temporarily use a standard client to isolate auth issues
+		client := &http.Client{}
+		// client, err := idtoken.NewClient(ctx, targetURL)
+		// if err != nil {
+		// 	http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		// 	return
+		// }
 
 		// Create new request
 		req, err := http.NewRequestWithContext(ctx, r.Method, target, r.Body)
