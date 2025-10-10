@@ -85,13 +85,13 @@ jobs:
       
       - name: Summary
         run: |
-          echo "## ✅ Gateway Deployment Successful" >> $GITHUB_STEP_SUMMARY
+          echo "## Gateway Deployment Successful" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Service:** $SERVICE_NAME (PUBLIC)" >> $GITHUB_STEP_SUMMARY
+          echo "**Service:** $SERVICE_NAME" >> $GITHUB_STEP_SUMMARY
           echo "**URL:** ${{ steps.url.outputs.url }}" >> $GITHUB_STEP_SUMMARY
           echo "**Region:** $REGION" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Backend Services (Private)" >> $GITHUB_STEP_SUMMARY
-          echo "- Activity: \`${{ steps.get_urls.outputs.activity_url }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- User: \`${{ steps.get_urls.outputs.user_url }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Session: \`${{ steps.get_urls.outputs.session_url }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "### Backend Services" >> $GITHUB_STEP_SUMMARY
+          echo "- Activity: ${{ steps.get_urls.outputs.activity_url }}" >> $GITHUB_STEP_SUMMARY
+          echo "- User: ${{ steps.get_urls.outputs.user_url }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Session: ${{ steps.get_urls.outputs.session_url }}" >> $GITHUB_STEP_SUMMARY
