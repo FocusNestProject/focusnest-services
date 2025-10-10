@@ -36,6 +36,7 @@ jobs:
         run: |
           gcloud builds submit \
             --timeout=10m \
+            --suppress-logs \
             --config=user-service/cloudbuild.yaml
       
       - name: Deploy to Cloud Run
