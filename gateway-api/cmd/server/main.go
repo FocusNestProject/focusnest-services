@@ -79,7 +79,7 @@ func main() {
 
 			// Activity Service Routes
 			r.Route("/v1/productivities", func(r chi.Router) {
-				h := proxyHandler(cfg.ActivityURL, "/v1/productivities")
+				h := proxyHandler(cfg.ActivityURL, "/v1/productivities", logger)
 				r.Get("/", h)
 				r.Post("/", h)
 				r.Get("/*", h)
@@ -88,7 +88,7 @@ func main() {
 
 			// Chatbot Routes
 			r.Route("/v1/chatbot", func(r chi.Router) {
-				h := proxyHandler(cfg.ActivityURL, "/v1/chatbot")
+				h := proxyHandler(cfg.ActivityURL, "/v1/chatbot", logger)
 				r.Get("/", h)
 				r.Post("/", h)
 				r.Get("/*", h)
@@ -97,14 +97,14 @@ func main() {
 
 			// Analytics Routes
 			r.Route("/v1/analytics", func(r chi.Router) {
-				h := proxyHandler(cfg.ActivityURL, "/v1/analytics")
+				h := proxyHandler(cfg.ActivityURL, "/v1/analytics", logger)
 				r.Get("/", h)
 				r.Get("/*", h)
 			})
 
 			// User Profile Routes
 			r.Route("/v1/users", func(r chi.Router) {
-				h := proxyHandler(cfg.ActivityURL, "/v1/users")
+				h := proxyHandler(cfg.ActivityURL, "/v1/users", logger)
 				r.Get("/", h)
 				r.Post("/", h)
 				r.Put("/", h)
@@ -117,7 +117,7 @@ func main() {
 
 			// Session Service Routes
 			r.Route("/v1/sessions", func(r chi.Router) {
-				h := proxyHandler(cfg.SessionURL, "/v1/sessions")
+				h := proxyHandler(cfg.SessionURL, "/v1/sessions", logger)
 				r.Get("/", h)
 				r.Post("/", h)
 				r.Put("/", h)
@@ -130,7 +130,7 @@ func main() {
 
 			// Media Service Routes
 			r.Route("/v1/media", func(r chi.Router) {
-				h := proxyHandler(cfg.MediaURL, "/v1/media")
+				h := proxyHandler(cfg.MediaURL, "/v1/media", logger)
 				r.Get("/", h)
 				r.Post("/", h)
 				r.Delete("/", h)
@@ -141,7 +141,7 @@ func main() {
 
 			// Webhook Service Routes
 			r.Route("/v1/webhooks", func(r chi.Router) {
-				h := proxyHandler(cfg.WebhookURL, "/v1/webhooks")
+				h := proxyHandler(cfg.WebhookURL, "/v1/webhooks", logger)
 				r.Post("/", h)
 				r.Post("/*", h)
 			})
@@ -177,7 +177,7 @@ func proxyMiddleware(cfg config, logger *slog.Logger) func(http.Handler) http.Ha
 }
 
 // proxyHandler creates a reverse proxy handler for the given target URL
-func proxyHandler(targetURL, pathPrefix string) http.HandlerFunc {
+func proxyHandler(targetURL, pathPrefix string, logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Create a new request to the target service
 		// Chi strips the matched route prefix, so we need to reconstruct the full path
@@ -192,6 +192,8 @@ func proxyHandler(targetURL, pathPrefix string) http.HandlerFunc {
 		if r.URL.RawQuery != "" {
 			target += "?" + r.URL.RawQuery
 		}
+
+		logger.Info("proxy target", "url", target, "method", r.Method, "original_path", r.URL.Path, "wildcard", wildcardPath)
 
 		// Create authenticated HTTP client for Cloud Run service-to-service calls
 		ctx := r.Context()
