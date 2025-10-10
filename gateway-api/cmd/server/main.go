@@ -187,7 +187,7 @@ func proxyHandler(targetURL, pathPrefix string) http.HandlerFunc {
 			fullPath = pathPrefix + "/" + wildcardPath
 		}
 		target := targetURL + fullPath
-		
+
 		// Add query parameters if present
 		if r.URL.RawQuery != "" {
 			target += "?" + r.URL.RawQuery
