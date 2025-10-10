@@ -1,0 +1,12 @@
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/session-service'
+      - '-f'
+      - 'session-service/Dockerfile'
+      - '.'
+images:
+  - 'gcr.io/$PROJECT_ID/session-service'
+timeout: 600s

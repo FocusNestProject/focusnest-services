@@ -1,0 +1,87 @@
+name: Deploy Gateway API
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - 'gateway-api/**'
+      - 'shared-libs/**'
+      - '.github/workflows/gateway-api.yml'
+
+env:
+  PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+  REGION: ${{ vars.GCP_REGION }}
+  SERVICE_NAME: gateway-api
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+      
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+      
+      - name: Build Docker image
+        run: |
+          gcloud builds submit \
+            --tag gcr.io/$PROJECT_ID/$SERVICE_NAME \
+            --timeout=10m \
+            --config=gateway-api/cloudbuild.yaml
+      
+      - name: Deploy to Cloud Run (PUBLIC)
+        run: |
+          gcloud run deploy $SERVICE_NAME \
+            --image gcr.io/$PROJECT_ID/$SERVICE_NAME \
+            --platform managed \
+            --region $REGION \
+            --allow-unauthenticated \
+            --ingress all \
+            --port 8080 \
+            --memory 512Mi \
+            --max-instances 10 \
+            --min-instances 0 \
+            --timeout 60s \
+            --set-env-vars="GCP_PROJECT_ID=$PROJECT_ID" \
+            --set-env-vars="AUTH_MODE=clerk" \
+            --set-env-vars="CLERK_JWKS_URL=${{ secrets.CLERK_JWKS_URL }}" \
+            --set-env-vars="CLERK_ISSUER=${{ secrets.CLERK_ISSUER }}" \
+            --set-env-vars="ACTIVITY_SERVICE_URL=${{ vars.ACTIVITY_SERVICE_URL }}" \
+            --set-env-vars="USER_SERVICE_URL=${{ vars.USER_SERVICE_URL }}" \
+            --set-env-vars="SESSION_SERVICE_URL=${{ vars.SESSION_SERVICE_URL }}" \
+            --set-env-vars="MEDIA_SERVICE_URL=${{ vars.MEDIA_SERVICE_URL }}" \
+            --set-env-vars="ANALYTICS_SERVICE_URL=${{ vars.ANALYTICS_SERVICE_URL }}" \
+            --set-env-vars="WEBHOOK_SERVICE_URL=${{ vars.WEBHOOK_SERVICE_URL }}"
+      
+      - name: Get Service URL
+        id: url
+        run: |
+          URL=$(gcloud run services describe $SERVICE_NAME \
+            --platform managed \
+            --region $REGION \
+            --format 'value(status.url)')
+          echo "Gateway deployed to: $URL"
+          echo "url=$URL" >> $GITHUB_OUTPUT
+      
+      - name: Summary
+        run: |
+          echo "## ✅ Gateway Deployment Successful" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Service:** $SERVICE_NAME (PUBLIC)" >> $GITHUB_STEP_SUMMARY
+          echo "**URL:** ${{ steps.url.outputs.url }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Region:** $REGION" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Backend Services (Private)" >> $GITHUB_STEP_SUMMARY
+          echo "- Activity: \`${{ vars.ACTIVITY_SERVICE_URL }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- User: \`${{ vars.USER_SERVICE_URL }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Session: \`${{ vars.SESSION_SERVICE_URL }}\`" >> $GITHUB_STEP_SUMMARY
