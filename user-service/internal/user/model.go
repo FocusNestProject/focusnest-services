@@ -24,8 +24,8 @@ type UserStats struct {
 
 // UserStreaks represents user streak information
 type UserStreaks struct {
-	CurrentStreak int `json:"current_streak"`
-	LongestStreak int `json:"longest_streak"`
+	CurrentStreak int       `json:"current_streak"`
+	LongestStreak int       `json:"longest_streak"`
 	LastActivity  time.Time `json:"last_activity"`
 }
 

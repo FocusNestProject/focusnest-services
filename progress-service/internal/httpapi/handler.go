@@ -40,10 +40,10 @@ func getProgress(service progress.Service) http.HandlerFunc {
 		}
 
 		response := map[string]interface{}{
-			"total_time":      stats.TotalTime,
-			"total_sessions":  stats.TotalSessions,
-			"categories":      stats.Categories,
-			"periods":         stats.Periods,
+			"total_time":     stats.TotalTime,
+			"total_sessions": stats.TotalSessions,
+			"categories":     stats.Categories,
+			"periods":        stats.Periods,
 		}
 
 		w.Header().Set("Content-Type", "application/json")

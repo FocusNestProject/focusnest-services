@@ -13,10 +13,10 @@ type Config struct {
 }
 
 type AuthConfig struct {
-	Mode    string `validate:"required"`
-	JWKSURL string `validate:"required"`
+	Mode     string `validate:"required"`
+	JWKSURL  string `validate:"required"`
 	Audience string `validate:"required"`
-	Issuer  string `validate:"required"`
+	Issuer   string `validate:"required"`
 }
 
 type FirestoreConfig struct {

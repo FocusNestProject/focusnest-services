@@ -64,7 +64,7 @@ func (r *firestoreRepository) GetProgressStats(userID string, startDate, endDate
 	for _, summary := range summaries {
 		stats.TotalTime += summary.TotalTime
 		stats.TotalSessions++
-		
+
 		for category, time := range summary.Categories {
 			stats.Categories[category] += time
 		}
@@ -75,7 +75,7 @@ func (r *firestoreRepository) GetProgressStats(userID string, startDate, endDate
 		"total_time": stats.TotalTime,
 		"sessions":   stats.TotalSessions,
 	}
-	
+
 	stats.Periods["month"] = map[string]interface{}{
 		"total_time": stats.TotalTime,
 		"sessions":   stats.TotalSessions,

@@ -6,13 +6,13 @@ import (
 
 // DailySummary represents a daily progress summary
 type DailySummary struct {
-	ID        string    `json:"id" firestore:"id"`
-	UserID    string    `json:"user_id" firestore:"user_id"`
-	Date      time.Time `json:"date" firestore:"date"`
-	TotalTime int       `json:"total_time" firestore:"total_time"` // in minutes
+	ID         string         `json:"id" firestore:"id"`
+	UserID     string         `json:"user_id" firestore:"user_id"`
+	Date       time.Time      `json:"date" firestore:"date"`
+	TotalTime  int            `json:"total_time" firestore:"total_time"` // in minutes
 	Categories map[string]int `json:"categories" firestore:"categories"`
-	CreatedAt time.Time `json:"created_at" firestore:"created_at"`
-	UpdatedAt time.Time `json:"updated_at" firestore:"updated_at"`
+	CreatedAt  time.Time      `json:"created_at" firestore:"created_at"`
+	UpdatedAt  time.Time      `json:"updated_at" firestore:"updated_at"`
 }
 
 // ProgressStats represents progress statistics
