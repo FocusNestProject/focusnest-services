@@ -44,7 +44,7 @@ jobs:
             --platform managed \
             --region $REGION \
             --no-allow-unauthenticated \
-            --ingress internal-and-cloud-load-balancing \
+            --ingress all \
             --set-env-vars="GCP_PROJECT_ID=$PROJECT_ID" \
             --set-env-vars="DATASTORE=firestore" \
             --set-env-vars="AUTH_MODE=clerk" \
@@ -88,7 +88,7 @@ jobs:
             --platform managed \
             --region $REGION \
             --no-allow-unauthenticated \
-            --ingress internal-and-cloud-load-balancing \
+            --ingress all \
             --set-env-vars="GCP_PROJECT_ID=$PROJECT_ID" \
             --set-env-vars="AUTH_MODE=clerk" \
             --set-env-vars="CLERK_JWKS_URL=${{ secrets.CLERK_JWKS_URL }}" \
@@ -131,7 +131,7 @@ jobs:
             --platform managed \
             --region $REGION \
             --no-allow-unauthenticated \
-            --ingress internal-and-cloud-load-balancing \
+            --ingress all \
             --set-env-vars="GCP_PROJECT_ID=$PROJECT_ID" \
             --set-env-vars="AUTH_MODE=clerk" \
             --set-env-vars="CLERK_JWKS_URL=${{ secrets.CLERK_JWKS_URL }}" \
@@ -174,10 +174,11 @@ jobs:
             --platform managed \
             --region $REGION \
             --no-allow-unauthenticated \
-            --ingress internal-and-cloud-load-balancing \
+            --ingress all \
             --set-env-vars="GCP_PROJECT_ID=$PROJECT_ID" \
             --set-env-vars="AUTH_MODE=clerk" \
             --set-env-vars="CLERK_JWKS_URL=${{ secrets.CLERK_JWKS_URL }}" \
+            --set-env-vars="CLERK_AUDIENCE=${{ secrets.CLERK_AUDIENCE }}" \
             --set-env-vars="CLERK_ISSUER=${{ secrets.CLERK_ISSUER }}"
           
           URL=$(gcloud run services describe user-service --platform managed --region $REGION --format 'value(status.url)')
