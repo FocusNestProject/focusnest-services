@@ -1,12 +1,10 @@
 go 1.24.0
 
 use (
-	./activity-service
-	./analytics-service
+	./chatbot-service
+	./focus-service
 	./gateway-api
-	./media-service
-	./session-service
+	./progress-service
 	./shared-libs
 	./user-service
-	./webhook-service
 )

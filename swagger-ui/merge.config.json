@@ -1,13 +1,9 @@
 {
-  "output": "swagger-ui/combined.yaml",
   "inputs": [
-    "gateway-api/api/openapi.yaml",
-    "activity-service/api/openapi.yaml",
-    "user-service/api/openapi.yaml",
-    "session-service/api/openapi.yaml",
-    "media-service/api/openapi.yaml",
-    "analytics-service/api/openapi.yaml",
-    "webhook-service/api/openapi.yaml"
-  ]
+    {
+      "inputFile": "../gateway-api/api/openapi.yaml",
+      "outputFile": "combined.yaml"
+    }
+  ],
+  "output": "combined.yaml"
 }
-

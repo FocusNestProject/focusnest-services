@@ -1,22 +1,17 @@
+version: '3.8'
+
 services:
   swagger-ui:
     image: swaggerapi/swagger-ui:latest
-    container_name: focusnest-swagger-ui
     ports:
       - "8089:8080"
     environment:
-      CONFIG_URL: /swagger-config.yaml
-      SWAGGER_UI_DOC_EXPANSION: none
-      SWAGGER_UI_OPERATION_ID_CLICK: "true"
-      SWAGGER_UI_TRY_IT_OUT_ENABLED: "true"
+      - SWAGGER_JSON_URL=/combined.yaml
     volumes:
-      - ./swagger-config.yaml:/usr/share/nginx/html/swagger-config.yaml:ro
       - ./combined.yaml:/usr/share/nginx/html/combined.yaml:ro
-      - ../activity-service/api/openapi.yaml:/usr/share/nginx/html/activity/openapi.yaml:ro
-      - ../gateway-api/api/openapi.yaml:/usr/share/nginx/html/gateway/openapi.yaml:ro
-      - ../user-service/api/openapi.yaml:/usr/share/nginx/html/user/openapi.yaml:ro
-      - ../session-service/api/openapi.yaml:/usr/share/nginx/html/session/openapi.yaml:ro
-      - ../media-service/api/openapi.yaml:/usr/share/nginx/html/media/openapi.yaml:ro
-      - ../analytics-service/api/openapi.yaml:/usr/share/nginx/html/analytics/openapi.yaml:ro
-      - ../webhook-service/api/openapi.yaml:/usr/share/nginx/html/webhook/openapi.yaml:ro
-    restart: unless-stopped
+    networks:
+      - focusnest
+
+networks:
+  focusnest:
+    external: true

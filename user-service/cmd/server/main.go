@@ -7,39 +7,55 @@ import (
 	"net/http"
 	"time"
 
+	"cloud.google.com/go/firestore"
 	"github.com/go-chi/chi/v5"
 
-	"github.com/focusnest/shared-libs/envconfig"
+	sharedauth "github.com/focusnest/shared-libs/auth"
 	"github.com/focusnest/shared-libs/logging"
 	sharedserver "github.com/focusnest/shared-libs/server"
+
+	"github.com/focusnest/user-service/internal/config"
+	"github.com/focusnest/user-service/internal/httpapi"
+	"github.com/focusnest/user-service/internal/user"
 )
-
-type config struct {
-	Port              string `validate:"required"`
-	GCPProjectID      string `validate:"required"`
-	FirestoreEmulator string `validate:"omitempty"`
-}
-
-func loadConfig() (config, error) {
-	cfg := config{
-		Port:              envconfig.Get("PORT", "8080"),
-		GCPProjectID:      envconfig.Get("GCP_PROJECT_ID", "focusnest-dev"),
-		FirestoreEmulator: envconfig.Get("FIRESTORE_EMULATOR_HOST", ""),
-	}
-	return cfg, envconfig.Validate(cfg)
-}
 
 func main() {
 	ctx := context.Background()
-	cfg, err := loadConfig()
+	cfg, err := config.Load()
 	if err != nil {
 		panic(fmt.Errorf("config error: %w", err))
 	}
 
 	logger := logging.NewLogger("user-service")
 
+	// Initialize Firestore client
+	client, err := firestore.NewClient(ctx, cfg.GCPProjectID)
+	if err != nil {
+		panic(fmt.Errorf("firestore client: %w", err))
+	}
+	defer client.Close()
+
+	// Initialize user service
+	userRepo := user.NewFirestoreRepository(client)
+	userService := user.NewService(userRepo)
+
+	verifier, err := sharedauth.NewVerifier(sharedauth.Config{
+		Mode:     sharedauth.Mode(cfg.Auth.Mode),
+		JWKSURL:  cfg.Auth.JWKSURL,
+		Audience: cfg.Auth.Audience,
+		Issuer:   cfg.Auth.Issuer,
+	})
+	if err != nil {
+		panic(fmt.Errorf("auth verifier error: %w", err))
+	}
+
 	router := sharedserver.NewRouter("user-service", func(r chi.Router) {
-		// TODO: register user routes.
+		r.Group(func(r chi.Router) {
+			r.Use(sharedauth.Middleware(verifier))
+
+			// Register user routes
+			httpapi.RegisterRoutes(r, userService)
+		})
 	})
 
 	srv := &http.Server{

@@ -23,28 +23,22 @@ import (
 type config struct {
 	Port         string `validate:"required"`
 	JWKSURL      string
-	Audience     string
 	Issuer       string
 	ActivityURL  string
 	UserURL      string
-	SessionURL   string
-	MediaURL     string
 	AnalyticsURL string
-	WebhookURL   string
+	ChatbotURL   string
 }
 
 func loadConfig() (config, error) {
 	cfg := config{
 		Port:         envconfig.Get("PORT", "8080"),
 		JWKSURL:      envconfig.Get("CLERK_JWKS_URL", ""),
-		Audience:     envconfig.Get("CLERK_AUDIENCE", ""),
 		Issuer:       envconfig.Get("CLERK_ISSUER", ""),
-		ActivityURL:  envconfig.Get("ACTIVITY_URL", "http://activity-service:8080"),
+		ActivityURL:  envconfig.Get("ACTIVITY_URL", "http://focus-service:8080"),
 		UserURL:      envconfig.Get("USER_URL", "http://user-service:8080"),
-		SessionURL:   envconfig.Get("SESSION_URL", "http://session-service:8080"),
-		MediaURL:     envconfig.Get("MEDIA_URL", "http://media-service:8080"),
-		AnalyticsURL: envconfig.Get("ANALYTICS_URL", "http://analytics-service:8080"),
-		WebhookURL:   envconfig.Get("WEBHOOK_URL", "http://webhook-service:8080"),
+		AnalyticsURL: envconfig.Get("ANALYTICS_URL", "http://progress-service:8080"),
+		ChatbotURL:   envconfig.Get("CHATBOT_URL", "http://chatbot-service:8080"),
 	}
 	return cfg, envconfig.Validate(cfg)
 }
@@ -60,10 +54,9 @@ func main() {
 
 	// Initialize JWT verifier for authentication
 	verifier, err := sharedauth.NewVerifier(sharedauth.Config{
-		Mode:     sharedauth.ModeClerk,
-		JWKSURL:  cfg.JWKSURL,
-		Audience: cfg.Audience,
-		Issuer:   cfg.Issuer,
+		Mode:    sharedauth.ModeClerk,
+		JWKSURL: cfg.JWKSURL,
+		Issuer:  cfg.Issuer,
 	})
 	if err != nil {
 		panic(fmt.Errorf("auth verifier error: %w", err))
@@ -81,73 +74,37 @@ func main() {
 			r.Use(proxyMiddleware(cfg, logger))
 
 			r.Route("/v1", func(r chi.Router) {
-				// Activity Service Routes
-				r.Route("/productivities", func(r chi.Router) {
-					h := proxyHandler(cfg.ActivityURL, "/v1/productivities", logger)
-					r.Get("/", h)
-					r.Post("/", h)
-					r.Get("/*", h)
-					r.Delete("/*", h)
+				// Focus Service Routes (renamed from activity-service)
+				r.Route("/focus", func(r chi.Router) {
+					h := proxyHandler(cfg.ActivityURL, "/v1/focus", logger)
+					r.Get("/history-month", h)
+					r.Route("/productivity", func(r chi.Router) {
+						r.Get("/", h)
+						r.Post("/", h)
+						r.Get("/*", h)
+					})
+					r.Post("/image-overview:retry", h)
 				})
 
-				// Chatbot Routes
+				// Chatbot Service Routes
 				r.Route("/chatbot", func(r chi.Router) {
-					h := proxyHandler(cfg.ActivityURL, "/v1/chatbot", logger)
-					r.Get("/", h)
-					r.Post("/", h)
-					r.Get("/*", h)
-					r.Post("/*", h)
+					h := proxyHandler(cfg.ChatbotURL, "/v1/chatbot", logger)
+					r.Get("/history", h)
+					r.Post("/ask", h)
 				})
 
-				// Analytics Routes
-				r.Route("/analytics", func(r chi.Router) {
-					h := proxyHandler(cfg.ActivityURL, "/v1/analytics", logger)
+				// Progress Service Routes
+				r.Route("/progress", func(r chi.Router) {
+					h := proxyHandler(cfg.AnalyticsURL, "/v1/progress", logger)
 					r.Get("/", h)
-					r.Get("/*", h)
 				})
 
-				// User Profile Routes
-				r.Route("/users", func(r chi.Router) {
-					h := proxyHandler(cfg.UserURL, "/v1/users", logger)
+				// User Service Routes
+				r.Route("/me", func(r chi.Router) {
+					h := proxyHandler(cfg.UserURL, "/v1/me", logger)
 					r.Get("/", h)
-					r.Post("/", h)
-					r.Put("/", h)
-					r.Delete("/", h)
-					r.Get("/*", h)
-					r.Post("/*", h)
-					r.Put("/*", h)
-					r.Delete("/*", h)
-				})
-
-				// Session Service Routes
-				r.Route("/sessions", func(r chi.Router) {
-					h := proxyHandler(cfg.SessionURL, "/v1/sessions", logger)
-					r.Get("/", h)
-					r.Post("/", h)
-					r.Put("/", h)
-					r.Delete("/", h)
-					r.Get("/*", h)
-					r.Post("/*", h)
-					r.Put("/*", h)
-					r.Delete("/*", h)
-				})
-
-				// Media Service Routes
-				r.Route("/media", func(r chi.Router) {
-					h := proxyHandler(cfg.MediaURL, "/v1/media", logger)
-					r.Get("/", h)
-					r.Post("/", h)
-					r.Delete("/", h)
-					r.Get("/*", h)
-					r.Post("/*", h)
-					r.Delete("/*", h)
-				})
-
-				// Webhook Service Routes
-				r.Route("/webhooks", func(r chi.Router) {
-					h := proxyHandler(cfg.WebhookURL, "/v1/webhooks", logger)
-					r.Post("/", h)
-					r.Post("/*", h)
+					r.Patch("/", h)
+					r.Get("/streaks", h)
 				})
 			})
 		})

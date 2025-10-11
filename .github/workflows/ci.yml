@@ -32,21 +32,21 @@ jobs:
 
       - name: Tidy modules
         run: |
-          for m in activity-service gateway-api shared-libs analytics-service media-service session-service user-service webhook-service; do
+          for m in focus-service gateway-api shared-libs chatbot-service progress-service user-service; do
             (cd $m && go mod tidy)
           done
 
       - name: Vet and Build
         run: |
           set -e
-          for m in activity-service gateway-api shared-libs analytics-service media-service session-service user-service webhook-service; do
+          for m in focus-service gateway-api shared-libs chatbot-service progress-service user-service; do
             echo "== $m =="
             (cd $m && go vet ./... && go build ./...)
           done
 
-      - name: Merge OpenAPI (All Services)
+      - name: Copy Gateway OpenAPI to Swagger UI
         run: |
-          docker run --rm -v ${{ github.workspace }}:/work -w /work python:3.11-alpine sh -lc "pip install pyyaml >/dev/null 2>&1 && python scripts/merge_openapi.py swagger-ui/combined.yaml gateway-api/api/openapi.yaml activity-service/api/openapi.yaml user-service/api/openapi.yaml session-service/api/openapi.yaml media-service/api/openapi.yaml analytics-service/api/openapi.yaml webhook-service/api/openapi.yaml"
+          cp gateway-api/api/openapi.yaml swagger-ui/combined.yaml
 
       - name: Validate merged OpenAPI
         run: |
