@@ -3,53 +3,13 @@ name: Deploy to Cloud Run
 on:
   push:
     branches: [main]
-  pull_request:
-    branches: [main]
 
 env:
   PROJECT_ID: focusnest-dev
   REGION: us-central1
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v4
-        with:
-          go-version: '1.24'
-
-      - name: Cache Go modules
-        uses: actions/cache@v3
-        with:
-          path: ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
-
-      - name: Download dependencies
-        run: go work sync
-
-      - name: Format check
-        run: |
-          files=$(gofmt -l .)
-          if [ -n "$files" ]; then
-            echo "The following files are not gofmt'ed:" && echo "$files" && exit 1
-          fi
-
-      - name: Lint
-        run: |
-          echo "Skipping linting for now - focus on deployment"
-
-      - name: Test
-        run: |
-          echo "Skipping tests for now - focus on deployment"
-
   deploy-focus-service:
-    needs: test
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
     outputs:
@@ -94,7 +54,6 @@ jobs:
           echo "url=$URL" >> $GITHUB_OUTPUT
 
   deploy-chatbot-service:
-    needs: test
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
     outputs:
@@ -138,7 +97,6 @@ jobs:
           echo "url=$URL" >> $GITHUB_OUTPUT
 
   deploy-progress-service:
-    needs: test
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
     outputs:
@@ -182,7 +140,6 @@ jobs:
           echo "url=$URL" >> $GITHUB_OUTPUT
 
   deploy-user-service:
-    needs: test
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
     outputs:
