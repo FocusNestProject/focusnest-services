@@ -144,9 +144,27 @@ func proxyHandler(targetURL, pathPrefix string, logger *slog.Logger) http.Handle
 		// Create a new request to the target service
 		// Chi strips the matched route prefix, so we need to reconstruct the full path
 		wildcardPath := chi.URLParam(r, "*")
+		
+		// Build full path: use original path if no wildcard
 		fullPath := pathPrefix
 		if wildcardPath != "" {
 			fullPath = pathPrefix + "/" + wildcardPath
+		} else if strings.HasPrefix(r.URL.Path, "/v1/focus/") {
+			// Extract the part after /v1/focus/ and append to pathPrefix
+			suffix := strings.TrimPrefix(r.URL.Path, "/v1/focus/")
+			if suffix != "" {
+				fullPath = pathPrefix + "/" + suffix
+			}
+		} else if strings.HasPrefix(r.URL.Path, "/v1/chatbot/") {
+			suffix := strings.TrimPrefix(r.URL.Path, "/v1/chatbot/")
+			if suffix != "" {
+				fullPath = pathPrefix + "/" + suffix
+			}
+		} else if strings.HasPrefix(r.URL.Path, "/v1/me/") {
+			suffix := strings.TrimPrefix(r.URL.Path, "/v1/me/")
+			if suffix != "" {
+				fullPath = pathPrefix + "/" + suffix
+			}
 		}
 		target := targetURL + fullPath
 
