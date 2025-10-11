@@ -6,6 +6,10 @@ WORKDIR /app
 COPY go.work go.work.sum ./
 COPY shared-libs/go.mod shared-libs/go.sum ./shared-libs/
 COPY focus-service/go.mod focus-service/go.sum ./focus-service/
+COPY gateway-api/go.mod gateway-api/go.sum ./gateway-api/
+COPY chatbot-service/go.mod chatbot-service/go.sum ./chatbot-service/
+COPY progress-service/go.mod progress-service/go.sum ./progress-service/
+COPY user-service/go.mod user-service/go.sum ./user-service/
 
 # Download dependencies
 RUN go work sync
