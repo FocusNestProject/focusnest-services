@@ -5,8 +5,9 @@ on:
     branches: [main]
 
 env:
-  PROJECT_ID: focusnest-dev
-  REGION: us-central1
+  PROJECT_ID: focusnest-470308
+  REGION: asia-southeast2
+  ARTIFACT_REGISTRY: asia-southeast2-docker.pkg.dev
 
 jobs:
   deploy-focus-service:
@@ -28,18 +29,18 @@ jobs:
         uses: google-github-actions/setup-gcloud@v2
 
       - name: Configure Docker to use gcloud as a credential helper
-        run: gcloud auth configure-docker
+        run: gcloud auth configure-docker asia-southeast2-docker.pkg.dev
 
       - name: Build and push Focus Service
         run: |
-          docker build -f focus-service/Dockerfile -t gcr.io/$PROJECT_ID/focus-service:$GITHUB_SHA .
-          docker push gcr.io/$PROJECT_ID/focus-service:$GITHUB_SHA
+          docker build -f focus-service/Dockerfile -t asia-southeast2-docker.pkg.dev/$PROJECT_ID/docker-images/focus-service:$GITHUB_SHA .
+          docker push asia-southeast2-docker.pkg.dev/$PROJECT_ID/docker-images/focus-service:$GITHUB_SHA
 
       - name: Deploy Focus Service
         id: deploy
         run: |
           gcloud run deploy focus-service \
-            --image gcr.io/$PROJECT_ID/focus-service:$GITHUB_SHA \
+            --image asia-southeast2-docker.pkg.dev/$PROJECT_ID/docker-images/focus-service:$GITHUB_SHA \
             --platform managed \
             --region $REGION \
             --no-allow-unauthenticated \
@@ -72,18 +73,18 @@ jobs:
         uses: google-github-actions/setup-gcloud@v2
 
       - name: Configure Docker to use gcloud as a credential helper
-        run: gcloud auth configure-docker
+        run: gcloud auth configure-docker asia-southeast2-docker.pkg.dev
 
       - name: Build and push Chatbot Service
         run: |
-          docker build -f chatbot-service/Dockerfile -t gcr.io/$PROJECT_ID/chatbot-service:$GITHUB_SHA .
-          docker push gcr.io/$PROJECT_ID/chatbot-service:$GITHUB_SHA
+          docker build -f chatbot-service/Dockerfile -t asia-southeast2-docker.pkg.dev/$PROJECT_ID/docker-images/chatbot-service:$GITHUB_SHA .
+          docker push asia-southeast2-docker.pkg.dev/$PROJECT_ID/docker-images/chatbot-service:$GITHUB_SHA
 
       - name: Deploy Chatbot Service
         id: deploy
         run: |
           gcloud run deploy chatbot-service \
-            --image gcr.io/$PROJECT_ID/chatbot-service:$GITHUB_SHA \
+            --image asia-southeast2-docker.pkg.dev/$PROJECT_ID/docker-images/chatbot-service:$GITHUB_SHA \
             --platform managed \
             --region $REGION \
             --no-allow-unauthenticated \
@@ -115,18 +116,18 @@ jobs:
         uses: google-github-actions/setup-gcloud@v2
 
       - name: Configure Docker to use gcloud as a credential helper
-        run: gcloud auth configure-docker
+        run: gcloud auth configure-docker asia-southeast2-docker.pkg.dev
 
       - name: Build and push Progress Service
         run: |
-          docker build -f progress-service/Dockerfile -t gcr.io/$PROJECT_ID/progress-service:$GITHUB_SHA .
-          docker push gcr.io/$PROJECT_ID/progress-service:$GITHUB_SHA
+          docker build -f progress-service/Dockerfile -t asia-southeast2-docker.pkg.dev/$PROJECT_ID/docker-images/progress-service:$GITHUB_SHA .
+          docker push asia-southeast2-docker.pkg.dev/$PROJECT_ID/docker-images/progress-service:$GITHUB_SHA
 
       - name: Deploy Progress Service
         id: deploy
         run: |
           gcloud run deploy progress-service \
-            --image gcr.io/$PROJECT_ID/progress-service:$GITHUB_SHA \
+            --image asia-southeast2-docker.pkg.dev/$PROJECT_ID/docker-images/progress-service:$GITHUB_SHA \
             --platform managed \
             --region $REGION \
             --no-allow-unauthenticated \
@@ -158,18 +159,18 @@ jobs:
         uses: google-github-actions/setup-gcloud@v2
 
       - name: Configure Docker to use gcloud as a credential helper
-        run: gcloud auth configure-docker
+        run: gcloud auth configure-docker asia-southeast2-docker.pkg.dev
 
       - name: Build and push User Service
         run: |
-          docker build -f user-service/Dockerfile -t gcr.io/$PROJECT_ID/user-service:$GITHUB_SHA .
-          docker push gcr.io/$PROJECT_ID/user-service:$GITHUB_SHA
+          docker build -f user-service/Dockerfile -t asia-southeast2-docker.pkg.dev/$PROJECT_ID/docker-images/user-service:$GITHUB_SHA .
+          docker push asia-southeast2-docker.pkg.dev/$PROJECT_ID/docker-images/user-service:$GITHUB_SHA
 
       - name: Deploy User Service
         id: deploy
         run: |
           gcloud run deploy user-service \
-            --image gcr.io/$PROJECT_ID/user-service:$GITHUB_SHA \
+            --image asia-southeast2-docker.pkg.dev/$PROJECT_ID/docker-images/user-service:$GITHUB_SHA \
             --platform managed \
             --region $REGION \
             --no-allow-unauthenticated \
@@ -200,17 +201,17 @@ jobs:
         uses: google-github-actions/setup-gcloud@v2
 
       - name: Configure Docker to use gcloud as a credential helper
-        run: gcloud auth configure-docker
+        run: gcloud auth configure-docker asia-southeast2-docker.pkg.dev
 
       - name: Build and push Gateway API
         run: |
-          docker build -f gateway-api/Dockerfile -t gcr.io/$PROJECT_ID/gateway-api:$GITHUB_SHA .
-          docker push gcr.io/$PROJECT_ID/gateway-api:$GITHUB_SHA
+          docker build -f gateway-api/Dockerfile -t asia-southeast2-docker.pkg.dev/$PROJECT_ID/docker-images/gateway-api:$GITHUB_SHA .
+          docker push asia-southeast2-docker.pkg.dev/$PROJECT_ID/docker-images/gateway-api:$GITHUB_SHA
 
       - name: Deploy Gateway API
         run: |
           gcloud run deploy gateway-api \
-            --image gcr.io/$PROJECT_ID/gateway-api:$GITHUB_SHA \
+            --image asia-southeast2-docker.pkg.dev/$PROJECT_ID/docker-images/gateway-api:$GITHUB_SHA \
             --platform managed \
             --region $REGION \
             --allow-unauthenticated \
