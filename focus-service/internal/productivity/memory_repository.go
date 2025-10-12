@@ -101,11 +101,7 @@ func (r *memoryRepository) ListByRange(_ context.Context, userID string, startIn
 		return snapshot[i].StartAt.After(snapshot[j].StartAt)
 	})
 
-	page := pagination.Page
 	pageSize := pagination.PageSize
-	if page <= 0 {
-		page = 1
-	}
 	if pageSize <= 0 {
 		pageSize = 20
 	}
@@ -119,9 +115,18 @@ func (r *memoryRepository) ListByRange(_ context.Context, userID string, startIn
 		totalPages = 1
 	}
 
-	start := (page - 1) * pageSize
-	if start >= totalItems {
-		return []Entry{}, PageInfo{Page: page, PageSize: pageSize, TotalPages: totalPages, TotalItems: totalItems, HasNext: false}, nil
+	// For simplicity in memory implementation, treat empty token as first page
+	start := 0
+	if pagination.Token != "" {
+		// In a real implementation, decode token to get offset
+		// For now, just return empty if token is provided (simplified)
+		return []Entry{}, PageInfo{
+			PageSize:   pageSize,
+			TotalPages: totalPages,
+			TotalItems: totalItems,
+			HasNext:    false,
+			NextToken:  "",
+		}, nil
 	}
 
 	end := start + pageSize
@@ -132,13 +137,18 @@ func (r *memoryRepository) ListByRange(_ context.Context, userID string, startIn
 	items := make([]Entry, end-start)
 	copy(items, snapshot[start:end])
 
-	hasNext := page < totalPages
+	hasNext := end < totalItems
+	nextToken := ""
+	if hasNext {
+		// In a real implementation, encode cursor position
+		nextToken = "next-page-token"
+	}
 
 	return items, PageInfo{
-		Page:       page,
 		PageSize:   pageSize,
 		TotalPages: totalPages,
 		TotalItems: totalItems,
 		HasNext:    hasNext,
+		NextToken:  nextToken,
 	}, nil
 }

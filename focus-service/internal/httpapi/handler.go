@@ -11,7 +11,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	sharedauth "github.com/focusnest/shared-libs/auth"
 
 	"github.com/focusnest/focus-service/internal/productivity"
 )
@@ -20,14 +19,14 @@ import (
 func RegisterRoutes(r chi.Router, svc *productivity.Service) {
 	h := &handler{service: svc}
 
-	r.Route("/v1/focus", func(r chi.Router) {
-		r.Get("/history-month", h.historyMonth)
-		r.Route("/productivity", func(r chi.Router) {
-			r.Get("/", h.list)
-			r.Post("/", h.create)
-			r.Get("/{activity_id}", h.get)
-		})
-		r.Post("/image-overview:retry", h.retryImageOverview)
+	// New API routes according to spec
+	r.Route("/v1/productivities", func(r chi.Router) {
+		r.Get("/", h.listProductivities)
+		r.Post("/", h.createProductivity)
+		r.Get("/{id}", h.getProductivity)
+		r.Delete("/{id}", h.deleteProductivity)
+		r.Post("/{id}/image", h.uploadProductivityImage)
+		r.Post("/{id}/image:retry", h.retryProductivityImageOverview)
 	})
 }
 
@@ -35,260 +34,8 @@ type handler struct {
 	service *productivity.Service
 }
 
-type activityResponse struct {
-	ID          string                  `json:"id"`
-	UserID      string                  `json:"user_id"`
-	Category    string                  `json:"category"`
-	TimeMode    string                  `json:"time_mode"`
-	Description string                  `json:"description,omitempty"`
-	Mood        string                  `json:"mood,omitempty"`
-	Cycles      int                     `json:"cycles"`
-	ElapsedMs   int                     `json:"elapsed_ms"`
-	StartAt     time.Time               `json:"start_at"`
-	EndAt       time.Time               `json:"end_at"`
-	Image       *productivity.ImageInfo `json:"image,omitempty"`
-	CreatedAt   time.Time               `json:"created_at"`
-	UpdatedAt   time.Time               `json:"updated_at"`
-}
 
-type monthHistoryResponse struct {
-	Month int         `json:"month"`
-	Year  int         `json:"year"`
-	Days  []dayStatus `json:"days"`
-}
 
-type dayStatus struct {
-	Date           string `json:"date"`
-	Status         string `json:"status"`
-	TotalElapsedMs int    `json:"total_elapsed_ms"`
-	Sessions       int    `json:"sessions"`
-}
-
-type listResponse struct {
-	Data       []activityResponse    `json:"data"`
-	Pagination productivity.PageInfo `json:"pagination"`
-}
-
-type createRequest struct {
-	Category    string                  `json:"category"`
-	TimeMode    string                  `json:"time_mode"`
-	Description string                  `json:"description"`
-	Mood        string                  `json:"mood"`
-	Cycles      int                     `json:"cycles"`
-	ElapsedMs   int                     `json:"elapsed_ms"`
-	StartAt     *string                 `json:"start_at"`
-	EndAt       *string                 `json:"end_at"`
-	Image       *productivity.ImageInfo `json:"image,omitempty"`
-}
-
-type retryImageOverviewRequest struct {
-	ActivityID string `json:"activity_id"`
-}
-
-type retryImageOverviewResponse struct {
-	Success bool   `json:"success"`
-	Message string `json:"message"`
-}
-
-func (h *handler) historyMonth(w http.ResponseWriter, r *http.Request) {
-	user, ok := sharedauth.UserFromContext(r.Context())
-	if !ok {
-		writeError(w, http.StatusUnauthorized, "unauthorized")
-		return
-	}
-
-	query := r.URL.Query()
-	month := parsePositiveInt(query.Get("month"), int(time.Now().Month()))
-	year := parsePositiveInt(query.Get("year"), time.Now().Year())
-
-	// Create anchor time for the requested month
-	anchor := time.Date(year, time.Month(month), 1, 0, 0, 0, 0, time.UTC)
-
-	// Get all activities for the month
-	monthStart := time.Date(anchor.Year(), anchor.Month(), 1, 0, 0, 0, 0, time.UTC)
-	monthEnd := monthStart.AddDate(0, 1, 0)
-
-	entries, _, err := h.service.ListMonth(r.Context(), user.UserID, anchor, productivity.Pagination{Page: 1, PageSize: 1000})
-	if err != nil {
-		respondProductivityServiceError(w, err)
-		return
-	}
-
-	// Group activities by day
-	dayMap := make(map[string][]productivity.Entry)
-	for _, entry := range entries {
-		day := entry.StartAt.Format("2006-01-02")
-		dayMap[day] = append(dayMap[day], entry)
-	}
-
-	// Generate day status for each day in the month
-	days := make([]dayStatus, 0)
-	current := monthStart
-	for current.Before(monthEnd) {
-		day := current.Format("2006-01-02")
-		dayEntries := dayMap[day]
-
-		status := "inactive"
-		totalElapsedMs := 0
-		sessions := len(dayEntries)
-
-		if sessions > 0 {
-			status = "active"
-			for _, entry := range dayEntries {
-				totalElapsedMs += entry.ElapsedMs
-			}
-		}
-
-		days = append(days, dayStatus{
-			Date:           day,
-			Status:         status,
-			TotalElapsedMs: totalElapsedMs,
-			Sessions:       sessions,
-		})
-
-		current = current.AddDate(0, 0, 1)
-	}
-
-	payload := monthHistoryResponse{
-		Month: month,
-		Year:  year,
-		Days:  days,
-	}
-
-	writeJSON(w, http.StatusOK, payload)
-}
-
-func (h *handler) list(w http.ResponseWriter, r *http.Request) {
-	user, ok := sharedauth.UserFromContext(r.Context())
-	if !ok {
-		writeError(w, http.StatusUnauthorized, "unauthorized")
-		return
-	}
-
-	query := r.URL.Query()
-	page := parsePositiveInt(query.Get("page"), 1)
-	pageSize := parsePositiveInt(query.Get("pageSize"), 20)
-	if pageSize > 100 {
-		pageSize = 100
-	}
-
-	// Get current month as default
-	anchor := time.Now().UTC()
-	entries, pageInfo, err := h.service.ListMonth(r.Context(), user.UserID, anchor, productivity.Pagination{Page: page, PageSize: pageSize})
-	if err != nil {
-		respondProductivityServiceError(w, err)
-		return
-	}
-
-	payload := listResponse{
-		Data:       make([]activityResponse, len(entries)),
-		Pagination: pageInfo,
-	}
-
-	for i, entry := range entries {
-		payload.Data[i] = mapEntry(entry)
-	}
-
-	writeJSON(w, http.StatusOK, payload)
-}
-
-func (h *handler) create(w http.ResponseWriter, r *http.Request) {
-	user, ok := sharedauth.UserFromContext(r.Context())
-	if !ok {
-		writeError(w, http.StatusUnauthorized, "unauthorized")
-		return
-	}
-
-	var body createRequest
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON payload")
-		return
-	}
-
-	input := productivity.CreateInput{
-		UserID:      user.UserID,
-		Category:    body.Category,
-		TimeMode:    body.TimeMode,
-		Description: body.Description,
-		Mood:        body.Mood,
-		Cycles:      body.Cycles,
-		ElapsedMs:   body.ElapsedMs,
-		Image:       body.Image,
-	}
-
-	if body.StartAt != nil && *body.StartAt != "" {
-		parsed, err := time.Parse(time.RFC3339, *body.StartAt)
-		if err != nil {
-			writeError(w, http.StatusBadRequest, "start_at must be RFC3339 timestamp")
-			return
-		}
-		input.StartAt = &parsed
-	}
-
-	if body.EndAt != nil && *body.EndAt != "" {
-		parsed, err := time.Parse(time.RFC3339, *body.EndAt)
-		if err != nil {
-			writeError(w, http.StatusBadRequest, "end_at must be RFC3339 timestamp")
-			return
-		}
-		input.EndAt = &parsed
-	}
-
-	entry, err := h.service.Create(r.Context(), input)
-	if err != nil {
-		respondProductivityServiceError(w, err)
-		return
-	}
-
-	writeJSON(w, http.StatusCreated, mapEntry(entry))
-}
-
-func (h *handler) get(w http.ResponseWriter, r *http.Request) {
-	user, ok := sharedauth.UserFromContext(r.Context())
-	if !ok {
-		writeError(w, http.StatusUnauthorized, "unauthorized")
-		return
-	}
-
-	id := chi.URLParam(r, "activity_id")
-	entry, err := h.service.Get(r.Context(), user.UserID, id)
-	if err != nil {
-		respondProductivityServiceError(w, err)
-		return
-	}
-
-	writeJSON(w, http.StatusOK, mapEntry(entry))
-}
-
-func (h *handler) retryImageOverview(w http.ResponseWriter, r *http.Request) {
-	user, ok := sharedauth.UserFromContext(r.Context())
-	if !ok {
-		writeError(w, http.StatusUnauthorized, "unauthorized")
-		return
-	}
-
-	var body retryImageOverviewRequest
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON payload")
-		return
-	}
-
-	// Verify the activity exists and belongs to the user
-	_, err := h.service.Get(r.Context(), user.UserID, body.ActivityID)
-	if err != nil {
-		respondProductivityServiceError(w, err)
-		return
-	}
-
-	// TODO: Implement image overview generation
-	// For now, just return success
-	payload := retryImageOverviewResponse{
-		Success: true,
-		Message: "Image overview generation triggered",
-	}
-
-	writeJSON(w, http.StatusOK, payload)
-}
 
 func respondProductivityServiceError(w http.ResponseWriter, err error) {
 	switch {
@@ -320,28 +67,260 @@ func parsePositiveInt(value string, fallback int) int {
 	return parsed
 }
 
-func mapEntry(entry productivity.Entry) activityResponse {
-	return activityResponse{
-		ID:          entry.ID,
-		UserID:      entry.UserID,
-		Category:    entry.Category,
-		TimeMode:    entry.TimeMode,
-		Description: entry.Description,
-		Mood:        entry.Mood,
-		Cycles:      entry.Cycles,
-		ElapsedMs:   entry.ElapsedMs,
-		StartAt:     entry.StartAt,
-		EndAt:       entry.EndAt,
-		Image:       entry.Image,
-		CreatedAt:   entry.CreatedAt,
-		UpdatedAt:   entry.UpdatedAt,
+
+// New API handlers according to the specification
+
+func (h *handler) listProductivities(w http.ResponseWriter, r *http.Request) {
+	userID := r.Header.Get("x-user-id")
+	if userID == "" {
+		writeError(w, http.StatusBadRequest, "user ID required")
+		return
 	}
+
+	// Parse query parameters
+	pageSize := parsePositiveInt(r.URL.Query().Get("pageSize"), 20)
+	if pageSize > 100 {
+		pageSize = 100
+	}
+	pageToken := r.URL.Query().Get("pageToken")
+	
+	var month, year *int
+	if monthStr := r.URL.Query().Get("month"); monthStr != "" {
+		if m, err := strconv.Atoi(monthStr); err == nil && m >= 1 && m <= 12 {
+			month = &m
+		}
+	}
+	if yearStr := r.URL.Query().Get("year"); yearStr != "" {
+		if y, err := strconv.Atoi(yearStr); err == nil {
+			year = &y
+		}
+	}
+
+	input := productivity.ListInput{
+		UserID:    userID,
+		PageSize:  pageSize,
+		PageToken: pageToken,
+		Month:     month,
+		Year:      year,
+	}
+
+	response, err := h.service.List(r.Context(), input)
+	if err != nil {
+		respondProductivityServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(response)
+}
+
+func (h *handler) createProductivity(w http.ResponseWriter, r *http.Request) {
+	userID := r.Header.Get("x-user-id")
+	if userID == "" {
+		writeError(w, http.StatusBadRequest, "user ID required")
+		return
+	}
+
+	// Parse multipart form
+	if err := r.ParseMultipartForm(32 << 20); err != nil { // 32MB max
+		writeError(w, http.StatusBadRequest, "failed to parse multipart form")
+		return
+	}
+
+	// Extract form fields
+	category := r.FormValue("category")
+	timeMode := r.FormValue("time_mode")
+	description := r.FormValue("description")
+	mood := r.FormValue("mood")
+	
+	var cycles int
+	if cyclesStr := r.FormValue("cycles"); cyclesStr != "" {
+		if c, err := strconv.Atoi(cyclesStr); err == nil {
+			cycles = c
+		}
+	}
+	
+	elapsedMsStr := r.FormValue("elapsed_ms")
+	if elapsedMsStr == "" {
+		writeError(w, http.StatusBadRequest, "elapsed_ms is required")
+		return
+	}
+	elapsedMs, err := strconv.Atoi(elapsedMsStr)
+	if err != nil || elapsedMs <= 0 {
+		writeError(w, http.StatusBadRequest, "elapsed_ms must be a positive integer")
+		return
+	}
+
+	// Parse timestamps
+	var startAt, endAt *time.Time
+	if startAtStr := r.FormValue("start_at"); startAtStr != "" {
+		if t, err := time.Parse(time.RFC3339, startAtStr); err == nil {
+			startAt = &t
+		}
+	}
+	if endAtStr := r.FormValue("end_at"); endAtStr != "" {
+		if t, err := time.Parse(time.RFC3339, endAtStr); err == nil {
+			endAt = &t
+		}
+	}
+
+	// Handle image upload
+	var image *productivity.ImageInfo
+	if file, _, err := r.FormFile("image"); err == nil {
+		defer file.Close()
+		// TODO: Upload to Cloud Storage and get URLs
+		// For now, create placeholder image info
+		image = &productivity.ImageInfo{
+			OriginalPath: fmt.Sprintf("users/%s/activities/%s/original.jpg", userID, "temp-id"),
+			OverviewPath: fmt.Sprintf("users/%s/activities/%s/overview.png", userID, "temp-id"),
+			OriginalURL:  "https://storage.googleapis.com/focusnest-media/users/temp/original.jpg",
+			OverviewURL:  "https://storage.googleapis.com/focusnest-media/users/temp/overview.png",
+		}
+	}
+
+	input := productivity.CreateInput{
+		UserID:      userID,
+		Category:    category,
+		TimeMode:    timeMode,
+		Description: description,
+		Mood:        mood,
+		Cycles:      cycles,
+		ElapsedMs:   elapsedMs,
+		StartAt:     startAt,
+		EndAt:       endAt,
+		Image:       image,
+	}
+
+	entry, err := h.service.Create(r.Context(), input)
+	if err != nil {
+		respondProductivityServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(entry)
+}
+
+func (h *handler) getProductivity(w http.ResponseWriter, r *http.Request) {
+	userID := r.Header.Get("x-user-id")
+	if userID == "" {
+		writeError(w, http.StatusBadRequest, "user ID required")
+		return
+	}
+
+	id := chi.URLParam(r, "id")
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "productivity ID required")
+		return
+	}
+
+	entry, err := h.service.Get(r.Context(), userID, id)
+	if err != nil {
+		respondProductivityServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(entry)
+}
+
+func (h *handler) deleteProductivity(w http.ResponseWriter, r *http.Request) {
+	userID := r.Header.Get("x-user-id")
+	if userID == "" {
+		writeError(w, http.StatusBadRequest, "user ID required")
+		return
+	}
+
+	id := chi.URLParam(r, "id")
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "productivity ID required")
+		return
+	}
+
+	err := h.service.Delete(r.Context(), userID, id)
+	if err != nil {
+		respondProductivityServiceError(w, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *handler) uploadProductivityImage(w http.ResponseWriter, r *http.Request) {
+	userID := r.Header.Get("x-user-id")
+	if userID == "" {
+		writeError(w, http.StatusBadRequest, "user ID required")
+		return
+	}
+
+	id := chi.URLParam(r, "id")
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "productivity ID required")
+		return
+	}
+
+	// Parse multipart form
+	if err := r.ParseMultipartForm(32 << 20); err != nil { // 32MB max
+		writeError(w, http.StatusBadRequest, "failed to parse multipart form")
+		return
+	}
+
+	file, header, err := r.FormFile("image")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "image file required")
+		return
+	}
+	defer file.Close()
+
+	// Read file data
+	imageData := make([]byte, header.Size)
+	if _, err := file.Read(imageData); err != nil {
+		writeError(w, http.StatusBadRequest, "failed to read image data")
+		return
+	}
+
+	response, err := h.service.UploadImage(r.Context(), userID, id, imageData, header.Filename)
+	if err != nil {
+		respondProductivityServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(response)
+}
+
+func (h *handler) retryProductivityImageOverview(w http.ResponseWriter, r *http.Request) {
+	userID := r.Header.Get("x-user-id")
+	if userID == "" {
+		writeError(w, http.StatusBadRequest, "user ID required")
+		return
+	}
+
+	id := chi.URLParam(r, "id")
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "productivity ID required")
+		return
+	}
+
+	response, err := h.service.RetryImageOverview(r.Context(), userID, id)
+	if err != nil {
+		respondProductivityServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(response)
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(payload)
+	_ = json.NewEncoder(w).Encode(payload)
 }
 
 func writeError(w http.ResponseWriter, status int, message string) {

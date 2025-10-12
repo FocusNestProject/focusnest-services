@@ -9,6 +9,7 @@ import (
 	"google.golang.org/api/iterator"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	firestorepb "google.golang.org/genproto/googleapis/firestore/v1"
 )
 
 type firestoreRepository struct {
@@ -39,7 +40,8 @@ func (r *firestoreRepository) Create(ctx context.Context, entry Entry) error {
 		"created_at":  entry.CreatedAt,
 		"updated_at":  entry.UpdatedAt,
 		"deleted":     false,
-		"anchor":      entry.StartAt,
+		// anchor is the canonical sort/filter field for time-range queries
+		"anchor": entry.StartAt,
 	}
 
 	if entry.Image != nil {
@@ -66,11 +68,9 @@ func (r *firestoreRepository) GetByID(ctx context.Context, userID, entryID strin
 	if err != nil {
 		return Entry{}, err
 	}
-
 	if deleted, ok := doc.Data()["deleted"].(bool); ok && deleted {
 		return Entry{}, ErrNotFound
 	}
-
 	return snapshotToEntry(userID, doc)
 }
 
@@ -83,7 +83,6 @@ func (r *firestoreRepository) Delete(ctx context.Context, userID, entryID string
 	if err != nil {
 		return err
 	}
-
 	if deleted, ok := doc.Data()["deleted"].(bool); ok && deleted {
 		return ErrNotFound
 	}
@@ -96,90 +95,147 @@ func (r *firestoreRepository) Delete(ctx context.Context, userID, entryID string
 	return err
 }
 
-func (r *firestoreRepository) ListByRange(ctx context.Context, userID string, startInclusive, endExclusive time.Time, pagination Pagination) ([]Entry, PageInfo, error) {
-	if pagination.Page <= 0 {
-		pagination.Page = 1
+func (r *firestoreRepository) ListByRange(
+	ctx context.Context,
+	userID string,
+	startInclusive, endExclusive time.Time,
+	pagination Pagination,
+) ([]Entry, PageInfo, error) {
+
+	pageSize := pagination.PageSize
+	if pageSize <= 0 {
+		pageSize = 20
 	}
-	if pagination.PageSize <= 0 {
-		pagination.PageSize = 20
+	if pageSize > 1000 {
+		pageSize = 1000
 	}
 
-	collection := r.userCollection(userID)
-	baseQuery := collection.
+	col := r.userCollection(userID)
+
+	// Base query: filter by not-deleted and the time window on "anchor"
+	base := col.
 		Where("deleted", "==", false).
 		Where("anchor", ">=", startInclusive).
 		Where("anchor", "<", endExclusive)
 
-	query := baseQuery.OrderBy("anchor", firestore.Desc).OrderBy("created_at", firestore.Desc)
+	// Index-friendly ordering: anchor desc + __name__ desc (acts as a stable tiebreaker)
+	q := base.
+		OrderBy("anchor", firestore.Desc).
+		OrderBy(firestore.DocumentID, firestore.Desc).
+		Limit(pageSize + 1)
 
-	offset := (pagination.Page - 1) * pagination.PageSize
-	if offset > 0 {
-		query = query.Offset(offset)
+	// Apply cursor if present
+	if pagination.Token != "" {
+		anc, lastID, ok, err := decodePageToken(pagination.Token)
+		if err != nil {
+			return nil, PageInfo{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
+		}
+		if ok {
+			q = q.StartAfter(anc, lastID)
+		}
 	}
 
-	iter := query.Limit(pagination.PageSize + 1).Documents(ctx)
-	defer iter.Stop()
-	entries := make([]Entry, 0)
+	it := q.Documents(ctx)
+	defer it.Stop()
+
+	entries := make([]Entry, 0, pageSize+1)
+	var last *firestore.DocumentSnapshot
+
 	for {
-		doc, err := iter.Next()
+		doc, err := it.Next()
 		if err == iterator.Done {
 			break
 		}
 		if err != nil {
 			return nil, PageInfo{}, err
 		}
-
-		entry, err := snapshotToEntry(userID, doc)
+		e, err := snapshotToEntry(userID, doc)
 		if err != nil {
 			return nil, PageInfo{}, err
 		}
-		entries = append(entries, entry)
+		entries = append(entries, e)
+		last = doc
 	}
 
-	hasNext := len(entries) > pagination.PageSize
+	// Determine next page token
+	hasNext := len(entries) > pageSize
+	var nextToken string
 	if hasNext {
-		entries = entries[:pagination.PageSize]
+		entries = entries[:pageSize]
+		if last != nil {
+			// Use the last *returned* doc as cursor
+			ld := last
+			// However, if we trimmed, ensure ld corresponds to the last element kept.
+			if len(entries) > 0 {
+				// We need the snapshot for the last kept doc. Re-read its anchor to build a cursor.
+				// Since we still have 'last' from the iterator (which is the last fetched, not necessarily the last kept),
+				// safest is to fetch the anchor from the last kept entry and pair it with its docID.
+				lastKept := entries[len(entries)-1]
+				anchor := lastKept.StartAt
+				nextToken = encodePageToken(anchor, lastKept.ID)
+			} else {
+				// degenerate case; fallback to iterator's last
+				anc, _ := ld.DataAt("anchor")
+				nextToken = encodePageToken(anc.(time.Time), ld.Ref.ID)
+			}
+		}
 	}
 
-	totalItems, totalPages, err := r.count(ctx, baseQuery, pagination.PageSize)
+	// Count via aggregation (no full scan)
+	totalItems, totalPages, err := r.countAgg(ctx, base, pageSize)
 	if err != nil {
 		return nil, PageInfo{}, err
 	}
 
 	return entries, PageInfo{
-		Page:       pagination.Page,
-		PageSize:   pagination.PageSize,
+		PageSize:   pageSize,
 		TotalPages: totalPages,
 		TotalItems: totalItems,
 		HasNext:    hasNext,
+		NextToken:  nextToken,
 	}, nil
 }
 
-func (r *firestoreRepository) count(ctx context.Context, query firestore.Query, pageSize int) (int, int, error) {
-	iter := query.Documents(ctx)
-	defer iter.Stop()
-
-	total := 0
-	for {
-		_, err := iter.Next()
-		if err == iterator.Done {
-			break
+// countAgg uses Firestore aggregation queries to avoid scanning documents client-side.
+func (r *firestoreRepository) countAgg(ctx context.Context, base firestore.Query, pageSize int) (int, int, error) {
+	agg := base.NewAggregationQuery().WithCount("c")
+	res, err := agg.Get(ctx)
+	if err != nil {
+		return 0, 0, fmt.Errorf("count query failed: %w", err)
+	}
+	// Handle Firestore protobuf value
+	var count int64
+	if val, ok := res["c"].(*firestorepb.Value); ok {
+		// Extract the integer value from the protobuf value
+		if val.GetIntegerValue() != 0 {
+			count = val.GetIntegerValue()
+		} else if val.GetDoubleValue() != 0 {
+			count = int64(val.GetDoubleValue())
+		} else {
+			return 0, 0, fmt.Errorf("unexpected protobuf value: %v", val)
 		}
-		if err != nil {
-			return 0, 0, fmt.Errorf("count query failed: %w", err)
+	} else {
+		// Fallback for other types
+		switch v := res["c"].(type) {
+		case int64:
+			count = v
+		case int:
+			count = int64(v)
+		case float64:
+			count = int64(v)
+		default:
+			return 0, 0, fmt.Errorf("unexpected count type: %T", v)
 		}
-		total++
 	}
-
-	items := total
-	totalPages := items / pageSize
-	if items%pageSize != 0 {
-		totalPages++
+	n := int(count)
+	pages := n / pageSize
+	if n%pageSize != 0 {
+		pages++
 	}
-	if totalPages == 0 {
-		totalPages = 1
+	if pages == 0 {
+		pages = 1
 	}
-	return items, totalPages, nil
+	return n, pages, nil
 }
 
 func snapshotToEntry(userID string, doc *firestore.DocumentSnapshot) (Entry, error) {
