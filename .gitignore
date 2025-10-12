@@ -1,53 +1,57 @@
-# Build artifacts
+# Compiled binaries
+server
+*/server
 bin/
-*/bin/
+dist/
+
+# Log files
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.sublime-*
+
+# Go specific
 *.exe
+*.exe~
 *.dll
 *.so
 *.dylib
 *.test
 *.out
+go.work.sum
 
-# Coverage reports
-coverage.*
-*.coverprofile
-
-# Dependency / module vendors
-vendor/
-
-# Tool caches
-.cache/
-
-# IDE / editor state
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# OS junk
-.DS_Store
-Thumbs.db
-
-# Logs & temp
-*.log
-*.tmp
-*.bak
-nohup.out
-server.log
-
-# Generated API docs
-swagger-ui/combined.yaml
-
-# Environment variables
+# Environment files
 .env
 .env.local
 .env.*.local
-*.env
 
 # Google Cloud credentials
-*-service-account.json
-service-account*.json
-credentials.json
-key.json
-github-sa-key.json
-*-sa-key.json
+*.json
+!package.json
+!tsconfig.json
+
+# Docker
+.dockerignore
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Build artifacts
+build/
+target/

@@ -1,0 +1,803 @@
+openapi: 3.1.0
+info:
+  title: FocusNest Gateway API
+  version: 0.1.0
+  description: Main entry point with authentication and routing to microservices
+servers:
+  - url: https://api.focusnest.com
+    description: Production
+  - url: http://localhost:8080
+    description: Local development
+paths:
+  /healthz:
+    get:
+      summary: Readiness probe
+      responses:
+        "200":
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+  /v1/focus/history-month:
+    get:
+      summary: Get running month view with day slots and status
+      tags:
+        - focus
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: month
+          description: Month (1-12). Defaults to current month.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 12
+        - in: query
+          name: year
+          description: Year (YYYY). Defaults to current year.
+          schema:
+            type: integer
+            minimum: 2020
+            maximum: 2030
+      responses:
+        "200":
+          description: Month view with daily status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MonthHistoryResponse"
+        "401":
+          description: Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/focus/productivity:
+    get:
+      summary: List productivity entries for the authenticated user (paginated)
+      tags:
+        - focus
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: page
+          description: 1-based page number. Defaults to 1.
+          schema:
+            type: integer
+            minimum: 1
+        - in: query
+          name: pageSize
+          description: Page size (max 100). Defaults to 20.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+      responses:
+        "200":
+          description: Paginated list of productivity entries
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListProductivitiesResponse"
+        "401":
+          description: Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    post:
+      summary: Create/save productivity entry
+      tags:
+        - focus
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/CreateProductivityRequest"
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProductivityRequest"
+      responses:
+        "201":
+          description: Productivity entry created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Activity"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/focus/productivity/{activity_id}:
+    get:
+      summary: Retrieve a productivity entry by ID
+      tags:
+        - focus
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: activity_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Productivity entry
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Activity"
+        "401":
+          description: Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Entry not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/focus/image-overview:retry:
+    post:
+      summary: Retry image overview generation
+      tags:
+        - focus
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RetryImageOverviewRequest"
+      responses:
+        "200":
+          description: Image overview generation triggered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RetryImageOverviewResponse"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/chatbot/history:
+    get:
+      summary: List chatbot conversation sessions for the authenticated user
+      tags:
+        - chatbot
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: page
+          description: 1-based page number. Defaults to 1.
+          schema:
+            type: integer
+            minimum: 1
+        - in: query
+          name: pageSize
+          description: Page size (max 100). Defaults to 20.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+      responses:
+        "200":
+          description: Paginated list of chatbot sessions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListChatbotSessionsResponse"
+        "401":
+          description: Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/chatbot/ask:
+    post:
+      summary: Ask the chatbot a question (creates session if none exists)
+      tags:
+        - chatbot
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AskChatbotRequest"
+      responses:
+        "200":
+          description: Chatbot response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AskChatbotResponse"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/progress:
+    get:
+      summary: Get progress analytics for the authenticated user
+      tags:
+        - progress
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: period
+          description: Time period for analytics (7d, 1m, 3m, 1y, all)
+          schema:
+            type: string
+            enum: [7d, 1m, 3m, 1y, all]
+            default: 1m
+        - in: query
+          name: start_date
+          description: Start date in YYYY-MM-DD format
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: end_date
+          description: End date in YYYY-MM-DD format
+          schema:
+            type: string
+            format: date
+      responses:
+        "200":
+          description: Progress analytics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProgressResponse"
+        "401":
+          description: Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/me:
+    get:
+      summary: Get user profile
+      tags:
+        - user
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+        "401":
+          description: Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Profile not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      summary: Update user profile
+      tags:
+        - user
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateUserProfileRequest"
+      responses:
+        "200":
+          description: User profile updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Profile not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/me/streaks:
+    get:
+      summary: Get user streaks
+      tags:
+        - user
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: User streaks
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserStreaks"
+        "401":
+          description: Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Profile not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+        service:
+          type: string
+        version:
+          type: string
+    ErrorResponse:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        requestId:
+          type: string
+      required:
+        - code
+        - message
+    Activity:
+      type: object
+      properties:
+        id:
+          type: string
+        user_id:
+          type: string
+        category:
+          type: string
+          enum: [Work, Study, Reading, Journaling, Cooking, Workout, Other]
+        time_mode:
+          type: string
+          enum: [Pomodoro, QuickFocus, FreeTimer, CustomTimer]
+        description:
+          type: string
+        mood:
+          type: string
+        cycles:
+          type: integer
+          minimum: 0
+        elapsed_ms:
+          type: integer
+          minimum: 0
+        start_at:
+          type: string
+          format: date-time
+        end_at:
+          type: string
+          format: date-time
+        image:
+          $ref: "#/components/schemas/ActivityImage"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - user_id
+        - category
+        - time_mode
+        - cycles
+        - elapsed_ms
+        - start_at
+        - end_at
+        - created_at
+        - updated_at
+    ActivityImage:
+      type: object
+      properties:
+        original_path:
+          type: string
+        overview_path:
+          type: string
+        original_url:
+          type: string
+          format: uri
+        overview_url:
+          type: string
+          format: uri
+    CreateProductivityRequest:
+      type: object
+      properties:
+        category:
+          type: string
+          enum: [Work, Study, Reading, Journaling, Cooking, Workout, Other]
+        time_mode:
+          type: string
+          enum: [Pomodoro, QuickFocus, FreeTimer, CustomTimer]
+        description:
+          type: string
+        mood:
+          type: string
+        cycles:
+          type: integer
+          minimum: 0
+        elapsed_ms:
+          type: integer
+          minimum: 0
+        start_at:
+          type: string
+          format: date-time
+        end_at:
+          type: string
+          format: date-time
+        image:
+          type: string
+          format: binary
+      required:
+        - category
+        - time_mode
+        - cycles
+        - elapsed_ms
+    MonthHistoryResponse:
+      type: object
+      properties:
+        month:
+          type: integer
+          minimum: 1
+          maximum: 12
+        year:
+          type: integer
+        days:
+          type: array
+          items:
+            $ref: "#/components/schemas/DayStatus"
+    DayStatus:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+        status:
+          type: string
+          enum: [active, inactive, partial]
+        total_elapsed_ms:
+          type: integer
+        sessions:
+          type: integer
+    ListProductivitiesResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Activity"
+        pagination:
+          type: object
+          properties:
+            page:
+              type: integer
+            pageSize:
+              type: integer
+            totalPages:
+              type: integer
+            totalItems:
+              type: integer
+            hasNext:
+              type: boolean
+          required:
+            - page
+            - pageSize
+            - totalPages
+            - totalItems
+            - hasNext
+      required:
+        - data
+        - pagination
+    RetryImageOverviewRequest:
+      type: object
+      properties:
+        activity_id:
+          type: string
+      required:
+        - activity_id
+    RetryImageOverviewResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+    ChatbotSession:
+      type: object
+      properties:
+        id:
+          type: string
+        user_id:
+          type: string
+        title:
+          type: string
+        message_count:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - user_id
+        - title
+        - message_count
+        - created_at
+        - updated_at
+    ListChatbotSessionsResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChatbotSession"
+        pagination:
+          type: object
+          properties:
+            page:
+              type: integer
+            pageSize:
+              type: integer
+            totalPages:
+              type: integer
+            totalItems:
+              type: integer
+            hasNext:
+              type: boolean
+          required:
+            - page
+            - pageSize
+            - totalPages
+            - totalItems
+            - hasNext
+      required:
+        - data
+        - pagination
+    AskChatbotRequest:
+      type: object
+      properties:
+        message:
+          type: string
+        session_id:
+          type: string
+          description: Optional session ID to continue existing conversation
+      required:
+        - message
+    AskChatbotResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        session_id:
+          type: string
+        message_id:
+          type: string
+      required:
+        - message
+        - session_id
+        - message_id
+    ProgressResponse:
+      type: object
+      properties:
+        period:
+          type: string
+        range:
+          type: object
+          properties:
+            start:
+              type: string
+              format: date-time
+            end:
+              type: string
+              format: date-time
+        stats:
+          type: object
+          properties:
+            total_elapsed_ms:
+              type: integer
+            total_sessions:
+              type: integer
+            total_hours:
+              type: number
+            streak:
+              type: object
+              properties:
+                current:
+                  type: integer
+                longest:
+                  type: integer
+                last_active:
+                  type: string
+                  format: date-time
+            by_category:
+              type: object
+              additionalProperties:
+                $ref: "#/components/schemas/CategoryStats"
+            by_period:
+              type: object
+              additionalProperties:
+                $ref: "#/components/schemas/PeriodStats"
+            hour_histogram:
+              type: object
+              additionalProperties:
+                type: integer
+        generated_at:
+          type: string
+          format: date-time
+      required:
+        - period
+        - range
+        - stats
+        - generated_at
+    CategoryStats:
+      type: object
+      properties:
+        elapsed_ms:
+          type: integer
+        sessions:
+          type: integer
+        hours:
+          type: number
+      required:
+        - elapsed_ms
+        - sessions
+        - hours
+    PeriodStats:
+      type: object
+      properties:
+        total_elapsed_ms:
+          type: integer
+        total_sessions:
+          type: integer
+        total_hours:
+          type: number
+        by_category:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/CategoryStats"
+      required:
+        - total_elapsed_ms
+        - total_sessions
+        - total_hours
+        - by_category
+    UserProfile:
+      type: object
+      properties:
+        id:
+          type: string
+        user_id:
+          type: string
+        display_name:
+          type: string
+        email:
+          type: string
+        bio:
+          type: string
+        birthdate:
+          type: string
+          format: date
+        stats:
+          $ref: "#/components/schemas/UserStats"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - user_id
+        - display_name
+        - email
+        - stats
+        - created_at
+        - updated_at
+    UserStats:
+      type: object
+      properties:
+        longest_streak_days:
+          type: integer
+        total_activity:
+          type: integer
+        total_session:
+          type: integer
+      required:
+        - longest_streak_days
+        - total_activity
+        - total_session
+    UpdateUserProfileRequest:
+      type: object
+      properties:
+        display_name:
+          type: string
+        bio:
+          type: string
+        birthdate:
+          type: string
+          format: date
+    UserStreaks:
+      type: object
+      properties:
+        current_streak:
+          type: integer
+        longest_streak:
+          type: integer
+        last_active:
+          type: string
+          format: date-time
+      required:
+        - current_streak
+        - longest_streak
+        - last_active
