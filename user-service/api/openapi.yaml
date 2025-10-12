@@ -4,7 +4,7 @@ info:
   version: 0.1.0
   description: User profile management and Clerk sync service
 servers:
-  - url: https://user.focusnest.com
+  - url: https://gateway-api-855213286667.asia-southeast2.run.app
     description: Production
   - url: http://localhost:8080
     description: Local development

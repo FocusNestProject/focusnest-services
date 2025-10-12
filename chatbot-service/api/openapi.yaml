@@ -4,7 +4,7 @@ info:
   version: 0.1.0
   description: Chatbot service with Gemini integration and chat persistence
 servers:
-  - url: https://chatbot.focusnest.com
+  - url: https://gateway-api-855213286667.asia-southeast2.run.app
     description: Production
   - url: http://localhost:8080
     description: Local development

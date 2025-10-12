@@ -4,7 +4,7 @@ info:
   version: 0.1.0
   description: Progress analytics service with daily summaries and aggregations
 servers:
-  - url: https://progress.focusnest.com
+  - url: https://gateway-api-855213286667.asia-southeast2.run.app
     description: Production
   - url: http://localhost:8080
     description: Local development
@@ -124,27 +124,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/WeeklyStreakData"
-        "401":
-          description: Missing or invalid authentication token
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-  /v1/streaks/current:
-    get:
-      operationId: getCurrentStreak
-      summary: Get current running streak
-      tags:
-        - streaks
-      security:
-        - bearerAuth: []
-      responses:
-        "200":
-          description: Current streak data retrieved successfully
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/StreakData"
         "401":
           description: Missing or invalid authentication token
           content:
@@ -306,23 +285,6 @@ components:
             $ref: "#/components/schemas/DayStatus"
       required:
         - week
-        - total_streak
-        - current_streak
-        - days
-    StreakData:
-      type: object
-      properties:
-        total_streak:
-          type: integer
-          description: Longest consecutive active days
-        current_streak:
-          type: integer
-          description: Current running streak
-        days:
-          type: array
-          items:
-            $ref: "#/components/schemas/DayStatus"
-      required:
         - total_streak
         - current_streak
         - days
