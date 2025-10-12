@@ -28,8 +28,8 @@ func main() {
 
 	logger := logging.NewLogger("progress-service")
 
-	// Initialize Firestore client
-	client, err := firestore.NewClient(ctx, cfg.GCPProjectID)
+	// Initialize Firestore client with focusnest-prod database
+	client, err := firestore.NewClientWithDatabase(ctx, cfg.GCPProjectID, "focusnest-prod")
 	if err != nil {
 		panic(fmt.Errorf("firestore client: %w", err))
 	}

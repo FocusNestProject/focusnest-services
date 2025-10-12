@@ -93,7 +93,12 @@ func newRepository(ctx context.Context, cfg config.Config) (productivity.Reposit
 			}
 		}
 
-		client, err := firestore.NewClientWithDatabase(ctx, cfg.GCPProjectID, "focusnest-prod")
+		// Use default database for local development, focusnest-prod for production
+		databaseID := "focusnest-prod"
+		if cfg.Firestore.EmulatorHost != "" {
+			databaseID = "(default)" // Use default database for emulator
+		}
+		client, err := firestore.NewClientWithDatabase(ctx, cfg.GCPProjectID, databaseID)
 		if err != nil {
 			return nil, nil, fmt.Errorf("firestore client: %w", err)
 		}
