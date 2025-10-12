@@ -231,3 +231,77 @@ jobs:
           echo "**Chatbot Service:** ${{ needs.deploy-chatbot-service.outputs.url }}" >> $GITHUB_STEP_SUMMARY
           echo "**Progress Service:** ${{ needs.deploy-progress-service.outputs.url }}" >> $GITHUB_STEP_SUMMARY
           echo "**User Service:** ${{ needs.deploy-user-service.outputs.url }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Swagger UI:** ${{ needs.deploy-swagger-ui.outputs.url }}" >> $GITHUB_STEP_SUMMARY
+
+  deploy-swagger-ui:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    outputs:
+      url: ${{ steps.deploy.outputs.url }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker
+        run: gcloud auth configure-docker $ARTIFACT_REGISTRY
+
+      - name: Merge OpenAPI specs
+        run: |
+          cd swagger-ui
+          # Create a basic combined OpenAPI spec
+          cat > combined.yaml << 'EOF'
+          openapi: 3.1.0
+          info:
+            title: FocusNest API
+            version: 1.0.0
+            description: Complete FocusNest microservices API
+          servers:
+            - url: https://api.focusnest.com
+              description: Production
+            - url: http://localhost:8080
+              description: Local development
+          paths: {}
+          components:
+            securitySchemes:
+              bearerAuth:
+                type: http
+                scheme: bearer
+                bearerFormat: JWT
+            schemas: {}
+          EOF
+
+      - name: Build and Push Swagger UI
+        run: |
+          cd swagger-ui
+          docker build -t asia-southeast2-docker.pkg.dev/$PROJECT_ID/docker-images/swagger-ui:$GITHUB_SHA .
+          docker push asia-southeast2-docker.pkg.dev/$PROJECT_ID/docker-images/swagger-ui:$GITHUB_SHA
+
+      - name: Deploy Swagger UI
+        id: deploy
+        run: |
+          gcloud run deploy swagger-ui \
+            --image asia-southeast2-docker.pkg.dev/$PROJECT_ID/docker-images/swagger-ui:$GITHUB_SHA \
+            --platform managed \
+            --region $REGION \
+            --allow-unauthenticated \
+            --ingress all \
+            --port 8080 \
+            --set-env-vars SWAGGER_JSON_URL=/combined.yaml \
+            --memory 512Mi \
+            --cpu 1 \
+            --max-instances 5
+
+      - name: Get Swagger UI URL
+        run: |
+          URL=$(gcloud run services describe swagger-ui --platform managed --region $REGION --format 'value(status.url)')
+          echo "Swagger UI deployed to: $URL"
+          echo "url=$URL" >> $GITHUB_OUTPUT

@@ -119,7 +119,7 @@ func (r *memoryRepository) ListByRange(_ context.Context, userID string, startIn
 	start := 0
 	if pagination.Token != "" {
 		// In a real implementation, decode token to get offset
-		// For now, just return empty if token is provided (simplified)
+		// Return empty if token is provided (simplified pagination)
 		return []Entry{}, PageInfo{
 			PageSize:   pageSize,
 			TotalPages: totalPages,

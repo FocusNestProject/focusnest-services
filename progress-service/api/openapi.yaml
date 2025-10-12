@@ -63,6 +63,94 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /v1/streaks/month:
+    get:
+      operationId: getMonthlyStreak
+      summary: Get monthly streak data
+      tags:
+        - streaks
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: month
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 12
+          description: Month (1-12), defaults to current month
+        - name: year
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 2020
+            maximum: 2030
+          description: Year, defaults to current year
+      responses:
+        "200":
+          description: Monthly streak data retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MonthlyStreakData"
+        "401":
+          description: Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/streaks/week:
+    get:
+      operationId: getWeeklyStreak
+      summary: Get weekly streak data
+      tags:
+        - streaks
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: date
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+          description: Date to get week for (YYYY-MM-DD), defaults to current week
+      responses:
+        "200":
+          description: Weekly streak data retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WeeklyStreakData"
+        "401":
+          description: Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/streaks/current:
+    get:
+      operationId: getCurrentStreak
+      summary: Get current running streak
+      tags:
+        - streaks
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Current streak data retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StreakData"
+        "401":
+          description: Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 components:
   securitySchemes:
     bearerAuth:
@@ -175,3 +263,84 @@ components:
         - total_sessions
         - total_hours
         - by_category
+    MonthlyStreakData:
+      type: object
+      properties:
+        month:
+          type: integer
+          minimum: 1
+          maximum: 12
+        year:
+          type: integer
+        total_streak:
+          type: integer
+          description: Longest consecutive active days in the month
+        current_streak:
+          type: integer
+          description: Current running streak
+        days:
+          type: array
+          items:
+            $ref: "#/components/schemas/DayStatus"
+      required:
+        - month
+        - year
+        - total_streak
+        - current_streak
+        - days
+    WeeklyStreakData:
+      type: object
+      properties:
+        week:
+          type: string
+          description: Week in YYYY-WW format
+        total_streak:
+          type: integer
+          description: Longest consecutive active days in the week
+        current_streak:
+          type: integer
+          description: Current running streak
+        days:
+          type: array
+          items:
+            $ref: "#/components/schemas/DayStatus"
+      required:
+        - week
+        - total_streak
+        - current_streak
+        - days
+    StreakData:
+      type: object
+      properties:
+        total_streak:
+          type: integer
+          description: Longest consecutive active days
+        current_streak:
+          type: integer
+          description: Current running streak
+        days:
+          type: array
+          items:
+            $ref: "#/components/schemas/DayStatus"
+      required:
+        - total_streak
+        - current_streak
+        - days
+    DayStatus:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+          description: Date in YYYY-MM-DD format
+        day:
+          type: string
+          description: Day of the week (Monday, Tuesday, etc.)
+        status:
+          type: string
+          enum: [active, skipped, upcoming]
+          description: Status of the day
+      required:
+        - date
+        - day
+        - status

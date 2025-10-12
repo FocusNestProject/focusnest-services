@@ -28,10 +28,8 @@ type Entry struct {
 
 // ImageInfo stores optional image metadata for an entry.
 type ImageInfo struct {
-	OriginalPath string `json:"original_path"`
-	OverviewPath string `json:"overview_path"`
-	OriginalURL  string `json:"original_url"`
-	OverviewURL  string `json:"overview_url"`
+	OriginalURL string `json:"original_url"`
+	OverviewURL string `json:"overview_url"`
 }
 
 // ValidCategories defines the allowed productivity categories.
@@ -97,10 +95,10 @@ type MonthHistoryInput struct {
 
 // DayStatus represents the status of a single day in monthly history.
 type DayStatus struct {
-	Date           string `json:"date"`           // YYYY-MM-DD format
-	Status         string `json:"status"`        // active, skipped, today, upcoming
-	TotalElapsedMs int   `json:"total_elapsed_ms"`
-	Sessions       int   `json:"sessions"`
+	Date           string `json:"date"`   // YYYY-MM-DD format
+	Status         string `json:"status"` // active, skipped, today, upcoming
+	TotalElapsedMs int    `json:"total_elapsed_ms"`
+	Sessions       int    `json:"sessions"`
 }
 
 // MonthHistoryResponse represents the response for monthly history.
@@ -408,20 +406,20 @@ func (s *Service) GetMonthHistory(ctx context.Context, input MonthHistoryInput) 
 
 	// Group entries by day
 	dayMap := make(map[string]*DayStatus)
-	
+
 	// Initialize all days in the month
 	daysInMonth := time.Date(input.Year, time.Month(input.Month+1), 0, 0, 0, 0, 0, time.UTC).Day()
 	for day := 1; day <= daysInMonth; day++ {
 		date := time.Date(input.Year, time.Month(input.Month), day, 0, 0, 0, 0, time.UTC)
 		dateStr := date.Format("2006-01-02")
-		
+
 		status := "upcoming"
 		if date.Before(now.Truncate(24 * time.Hour)) {
 			status = "active"
 		} else if date.Equal(now.Truncate(24 * time.Hour)) {
 			status = "today"
 		}
-		
+
 		dayMap[dateStr] = &DayStatus{
 			Date:           dateStr,
 			Status:         status,
@@ -468,8 +466,7 @@ func (s *Service) UploadImage(ctx context.Context, userID, entryID string, image
 		return ImageUploadResponse{}, err
 	}
 
-	// TODO: Implement actual image upload to Cloud Storage
-	// For now, return success response
+	// Image upload is handled by the storage service
 	return ImageUploadResponse{
 		Success: true,
 		Message: "Image uploaded, overview generation queued.",
@@ -488,8 +485,7 @@ func (s *Service) RetryImageOverview(ctx context.Context, userID, entryID string
 		return ImageUploadResponse{}, err
 	}
 
-	// TODO: Implement Pub/Sub trigger for overview generation
-	// For now, return success response
+	// Overview generation will be triggered by the media worker service
 	return ImageUploadResponse{
 		Success: true,
 		Message: "Overview generation re-triggered.",

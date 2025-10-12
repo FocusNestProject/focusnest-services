@@ -7,9 +7,9 @@ import (
 
 	"cloud.google.com/go/firestore"
 	"google.golang.org/api/iterator"
+	firestorepb "google.golang.org/genproto/googleapis/firestore/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	firestorepb "google.golang.org/genproto/googleapis/firestore/v1"
 )
 
 type firestoreRepository struct {
@@ -21,7 +21,7 @@ func NewFirestoreRepository(client *firestore.Client) Repository {
 	return &firestoreRepository{client: client}
 }
 
-const productivitiesCollection = "activities"
+const productivitiesCollection = "productivities"
 
 func (r *firestoreRepository) userCollection(userID string) *firestore.CollectionRef {
 	return r.client.Collection("users").Doc(userID).Collection(productivitiesCollection)
@@ -46,10 +46,8 @@ func (r *firestoreRepository) Create(ctx context.Context, entry Entry) error {
 
 	if entry.Image != nil {
 		data["image"] = map[string]any{
-			"original_path": entry.Image.OriginalPath,
-			"overview_path": entry.Image.OverviewPath,
-			"original_url":  entry.Image.OriginalURL,
-			"overview_url":  entry.Image.OverviewURL,
+			"original_url": entry.Image.OriginalURL,
+			"overview_url": entry.Image.OverviewURL,
 		}
 	}
 
@@ -203,16 +201,20 @@ func (r *firestoreRepository) countAgg(ctx context.Context, base firestore.Query
 	if err != nil {
 		return 0, 0, fmt.Errorf("count query failed: %w", err)
 	}
-	// Handle Firestore protobuf value
+	// Handle Firestore protobuf value - simplified approach
 	var count int64
 	if val, ok := res["c"].(*firestorepb.Value); ok {
-		// Extract the integer value from the protobuf value
-		if val.GetIntegerValue() != 0 {
-			count = val.GetIntegerValue()
-		} else if val.GetDoubleValue() != 0 {
-			count = int64(val.GetDoubleValue())
+		// Try to get integer value first, then double value
+		integerVal := val.GetIntegerValue()
+		doubleVal := val.GetDoubleValue()
+
+		if integerVal != 0 {
+			count = integerVal
+		} else if doubleVal != 0 {
+			count = int64(doubleVal)
 		} else {
-			return 0, 0, fmt.Errorf("unexpected protobuf value: %v", val)
+			// Both are 0, which is valid for empty collections
+			count = 0
 		}
 	} else {
 		// Fallback for other types
@@ -279,10 +281,8 @@ func snapshotToEntry(userID string, doc *firestore.DocumentSnapshot) (Entry, err
 	// Parse image data if present
 	if payload.Image != nil {
 		entry.Image = &ImageInfo{
-			OriginalPath: getStringFromMap(payload.Image, "original_path"),
-			OverviewPath: getStringFromMap(payload.Image, "overview_path"),
-			OriginalURL:  getStringFromMap(payload.Image, "original_url"),
-			OverviewURL:  getStringFromMap(payload.Image, "overview_url"),
+			OriginalURL: getStringFromMap(payload.Image, "original_url"),
+			OverviewURL: getStringFromMap(payload.Image, "overview_url"),
 		}
 	}
 

@@ -1,6 +1,7 @@
 package progress
 
 import (
+	"context"
 	"time"
 )
 
@@ -23,6 +24,37 @@ type ProgressStats struct {
 	Periods       map[string]interface{} `json:"periods"`
 }
 
+// StreakData represents streak information
+type StreakData struct {
+	TotalStreak   int         `json:"total_streak"`
+	CurrentStreak int         `json:"current_streak"`
+	Days          []DayStatus `json:"days"`
+}
+
+// MonthlyStreakData represents monthly streak data
+type MonthlyStreakData struct {
+	Month         int         `json:"month"`
+	Year          int         `json:"year"`
+	TotalStreak   int         `json:"total_streak"`
+	CurrentStreak int         `json:"current_streak"`
+	Days          []DayStatus `json:"days"`
+}
+
+// WeeklyStreakData represents weekly streak data
+type WeeklyStreakData struct {
+	Week          string      `json:"week"` // YYYY-WW format
+	TotalStreak   int         `json:"total_streak"`
+	CurrentStreak int         `json:"current_streak"`
+	Days          []DayStatus `json:"days"`
+}
+
+// DayStatus represents the status of a single day
+type DayStatus struct {
+	Date   string `json:"date"`   // YYYY-MM-DD format
+	Day    string `json:"day"`    // Monday, Tuesday, etc.
+	Status string `json:"status"` // active, skipped, upcoming
+}
+
 // Repository defines the interface for progress data access
 type Repository interface {
 	GetDailySummaries(userID string, startDate, endDate time.Time) ([]*DailySummary, error)
@@ -32,4 +64,7 @@ type Repository interface {
 // Service defines the progress service interface
 type Service interface {
 	GetProgress(userID string, startDate, endDate time.Time) (*ProgressStats, error)
+	GetMonthlyStreak(ctx context.Context, userID string, month, year int) (*MonthlyStreakData, error)
+	GetWeeklyStreak(ctx context.Context, userID string, targetDate time.Time) (*WeeklyStreakData, error)
+	GetCurrentStreak(ctx context.Context, userID string) (*StreakData, error)
 }

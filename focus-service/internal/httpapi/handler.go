@@ -1,9 +1,11 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"mime/multipart"
 	"net/http"
 	"strconv"
 	"strings"
@@ -11,13 +13,13 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-
 	"github.com/focusnest/focus-service/internal/productivity"
+	"github.com/focusnest/focus-service/internal/storage"
 )
 
 // RegisterRoutes wires productivity routes onto the provided router.
-func RegisterRoutes(r chi.Router, svc *productivity.Service) {
-	h := &handler{service: svc}
+func RegisterRoutes(r chi.Router, svc *productivity.Service, storageSvc *storage.Service) {
+	h := &handler{service: svc, storage: storageSvc}
 
 	// New API routes according to spec
 	r.Route("/v1/productivities", func(r chi.Router) {
@@ -28,14 +30,13 @@ func RegisterRoutes(r chi.Router, svc *productivity.Service) {
 		r.Post("/{id}/image", h.uploadProductivityImage)
 		r.Post("/{id}/image:retry", h.retryProductivityImageOverview)
 	})
+
 }
 
 type handler struct {
 	service *productivity.Service
+	storage *storage.Service
 }
-
-
-
 
 func respondProductivityServiceError(w http.ResponseWriter, err error) {
 	switch {
@@ -67,6 +68,110 @@ func parsePositiveInt(value string, fallback int) int {
 	return parsed
 }
 
+// contains checks if a string slice contains a specific string
+func contains(slice []string, item string) bool {
+	for _, s := range slice {
+		if s == item {
+			return true
+		}
+	}
+	return false
+}
+
+// validateAndUploadImage validates and uploads an image to Cloud Storage
+func (h *handler) validateAndUploadImage(ctx context.Context, file multipart.File, header *multipart.FileHeader, userID string) (*productivity.ImageInfo, error) {
+	// Check content type - accept all image types
+	contentType := header.Header.Get("Content-Type")
+	if !strings.HasPrefix(contentType, "image/") {
+		return nil, fmt.Errorf("file must be an image")
+	}
+
+	// Check file extension - accept all common image formats
+	filename := strings.ToLower(header.Filename)
+	validExtensions := []string{".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".tiff", ".svg"}
+	hasValidExtension := false
+	for _, ext := range validExtensions {
+		if strings.HasSuffix(filename, ext) {
+			hasValidExtension = true
+			break
+		}
+	}
+	if !hasValidExtension {
+		return nil, fmt.Errorf("image must have a valid extension (.jpg, .jpeg, .png, .gif, .webp, .bmp, .tiff, .svg)")
+	}
+
+	// Check file size (max 10MB, min 1KB)
+	if header.Size > 10*1024*1024 {
+		return nil, fmt.Errorf("image too large (max 10MB)")
+	}
+	if header.Size < 1024 {
+		return nil, fmt.Errorf("image too small (min 1KB)")
+	}
+
+	// Read first few bytes to check magic bytes for common formats
+	headerBytes := make([]byte, 4)
+	if _, err := file.Read(headerBytes); err != nil {
+		return nil, fmt.Errorf("failed to read image header")
+	}
+
+	// Check magic bytes for common image formats
+	isValidImage := false
+
+	// JPEG: FF D8 FF
+	if headerBytes[0] == 0xFF && headerBytes[1] == 0xD8 && headerBytes[2] == 0xFF {
+		isValidImage = true
+	}
+	// PNG: 89 50 4E 47
+	if headerBytes[0] == 0x89 && headerBytes[1] == 0x50 && headerBytes[2] == 0x4E && headerBytes[3] == 0x47 {
+		isValidImage = true
+	}
+	// GIF: 47 49 46 38
+	if headerBytes[0] == 0x47 && headerBytes[1] == 0x49 && headerBytes[2] == 0x46 && headerBytes[3] == 0x38 {
+		isValidImage = true
+	}
+	// WebP: 52 49 46 46 (RIFF)
+	if headerBytes[0] == 0x52 && headerBytes[1] == 0x49 && headerBytes[2] == 0x46 && headerBytes[3] == 0x46 {
+		isValidImage = true
+	}
+	// BMP: 42 4D
+	if headerBytes[0] == 0x42 && headerBytes[1] == 0x4D {
+		isValidImage = true
+	}
+	// TIFF: 49 49 2A 00 or 4D 4D 00 2A
+	if (headerBytes[0] == 0x49 && headerBytes[1] == 0x49 && headerBytes[2] == 0x2A && headerBytes[3] == 0x00) ||
+		(headerBytes[0] == 0x4D && headerBytes[1] == 0x4D && headerBytes[2] == 0x00 && headerBytes[3] == 0x2A) {
+		isValidImage = true
+	}
+
+	if !isValidImage {
+		return nil, fmt.Errorf("invalid image file format")
+	}
+
+	// Reset file pointer
+	if _, err := file.Seek(0, 0); err != nil {
+		return nil, fmt.Errorf("failed to reset file pointer")
+	}
+
+	// Upload to Cloud Storage with signed URLs
+	uploadResult, err := h.storage.UploadImage(ctx, userID, file, header.Filename)
+	if err != nil {
+		return nil, fmt.Errorf("failed to upload image: %w", err)
+	}
+
+	return &productivity.ImageInfo{
+		OriginalURL: uploadResult.OriginalURL,
+		OverviewURL: uploadResult.OverviewURL,
+	}, nil
+}
+
+// getFileExtension extracts the file extension from filename
+func getFileExtension(filename string) string {
+	lastDot := strings.LastIndex(filename, ".")
+	if lastDot == -1 {
+		return ".jpg" // default fallback
+	}
+	return filename[lastDot:]
+}
 
 // New API handlers according to the specification
 
@@ -83,7 +188,7 @@ func (h *handler) listProductivities(w http.ResponseWriter, r *http.Request) {
 		pageSize = 100
 	}
 	pageToken := r.URL.Query().Get("pageToken")
-	
+
 	var month, year *int
 	if monthStr := r.URL.Query().Get("month"); monthStr != "" {
 		if m, err := strconv.Atoi(monthStr); err == nil && m >= 1 && m <= 12 {
@@ -118,67 +223,126 @@ func (h *handler) listProductivities(w http.ResponseWriter, r *http.Request) {
 func (h *handler) createProductivity(w http.ResponseWriter, r *http.Request) {
 	userID := r.Header.Get("x-user-id")
 	if userID == "" {
-		writeError(w, http.StatusBadRequest, "user ID required")
+		writeError(w, http.StatusUnauthorized, "missing user ID")
 		return
 	}
 
-	// Parse multipart form
-	if err := r.ParseMultipartForm(32 << 20); err != nil { // 32MB max
+	// Parse multipart form with 16MB limit
+	err := r.ParseMultipartForm(16 << 20)
+	if err != nil {
 		writeError(w, http.StatusBadRequest, "failed to parse multipart form")
 		return
 	}
 
-	// Extract form fields
+	// Extract and validate required fields
 	category := r.FormValue("category")
 	timeMode := r.FormValue("time_mode")
-	description := r.FormValue("description")
-	mood := r.FormValue("mood")
-	
-	var cycles int
-	if cyclesStr := r.FormValue("cycles"); cyclesStr != "" {
-		if c, err := strconv.Atoi(cyclesStr); err == nil {
-			cycles = c
-		}
-	}
-	
 	elapsedMsStr := r.FormValue("elapsed_ms")
+
+	if category == "" {
+		writeError(w, http.StatusBadRequest, "category is required")
+		return
+	}
+	if timeMode == "" {
+		writeError(w, http.StatusBadRequest, "time_mode is required")
+		return
+	}
 	if elapsedMsStr == "" {
 		writeError(w, http.StatusBadRequest, "elapsed_ms is required")
 		return
 	}
+
+	// Validate enums
+	validCategories := []string{"Work", "Study", "Reading", "Journaling", "Cooking", "Workout", "Other"}
+	validTimeModes := []string{"Pomodoro", "QuickFocus", "FreeTimer", "CustomTimer"}
+	validMoods := []string{"excited", "focused", "calm", "energetic", "tired", "motivated", "stressed", "relaxed"}
+
+	if !contains(validCategories, category) {
+		writeError(w, http.StatusBadRequest, "invalid category")
+		return
+	}
+	if !contains(validTimeModes, timeMode) {
+		writeError(w, http.StatusBadRequest, "invalid time_mode")
+		return
+	}
+
+	// Parse elapsed_ms
 	elapsedMs, err := strconv.Atoi(elapsedMsStr)
 	if err != nil || elapsedMs <= 0 {
 		writeError(w, http.StatusBadRequest, "elapsed_ms must be a positive integer")
 		return
 	}
 
-	// Parse timestamps
+	// Extract optional fields
+	description := r.FormValue("description")
+	mood := r.FormValue("mood")
+	cyclesStr := r.FormValue("cycles")
+	startAtStr := r.FormValue("start_at")
+	endAtStr := r.FormValue("end_at")
+
+	// Validate description length
+	if len(description) > 2000 {
+		writeError(w, http.StatusBadRequest, "description must be ≤ 2000 characters")
+		return
+	}
+
+	// Validate mood if provided
+	if mood != "" && !contains(validMoods, mood) {
+		writeError(w, http.StatusBadRequest, "invalid mood")
+		return
+	}
+
+	// Parse cycles (optional, default 1)
+	cycles := 1
+	if cyclesStr != "" {
+		cycles, err = strconv.Atoi(cyclesStr)
+		if err != nil || cycles < 0 {
+			writeError(w, http.StatusBadRequest, "cycles must be a non-negative integer")
+			return
+		}
+	}
+
+	// Parse and validate timestamps
 	var startAt, endAt *time.Time
-	if startAtStr := r.FormValue("start_at"); startAtStr != "" {
+	if startAtStr != "" {
 		if t, err := time.Parse(time.RFC3339, startAtStr); err == nil {
 			startAt = &t
+		} else {
+			writeError(w, http.StatusBadRequest, "start_at must be RFC3339 timestamp")
+			return
 		}
 	}
-	if endAtStr := r.FormValue("end_at"); endAtStr != "" {
+	if endAtStr != "" {
 		if t, err := time.Parse(time.RFC3339, endAtStr); err == nil {
 			endAt = &t
+		} else {
+			writeError(w, http.StatusBadRequest, "end_at must be RFC3339 timestamp")
+			return
 		}
 	}
 
-	// Handle image upload
-	var image *productivity.ImageInfo
-	if file, _, err := r.FormFile("image"); err == nil {
-		defer file.Close()
-		// TODO: Upload to Cloud Storage and get URLs
-		// For now, create placeholder image info
-		image = &productivity.ImageInfo{
-			OriginalPath: fmt.Sprintf("users/%s/activities/%s/original.jpg", userID, "temp-id"),
-			OverviewPath: fmt.Sprintf("users/%s/activities/%s/overview.png", userID, "temp-id"),
-			OriginalURL:  "https://storage.googleapis.com/focusnest-media/users/temp/original.jpg",
-			OverviewURL:  "https://storage.googleapis.com/focusnest-media/users/temp/overview.png",
-		}
+	// Validate timestamp relationship
+	if startAt != nil && endAt != nil && endAt.Before(*startAt) {
+		writeError(w, http.StatusBadRequest, "end_at must be ≥ start_at")
+		return
 	}
 
+	// Handle image upload with validation (REQUIRED)
+	file, header, err := r.FormFile("image")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "image is required")
+		return
+	}
+	defer file.Close()
+
+	// Validate image
+	image, err := h.validateAndUploadImage(r.Context(), file, header, userID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	// Create the productivity entry
 	input := productivity.CreateInput{
 		UserID:      userID,
 		Category:    category,
@@ -192,15 +356,19 @@ func (h *handler) createProductivity(w http.ResponseWriter, r *http.Request) {
 		Image:       image,
 	}
 
+	// Validate input
+	if err := input.Validate(); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
 	entry, err := h.service.Create(r.Context(), input)
 	if err != nil {
 		respondProductivityServiceError(w, err)
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(entry)
+	writeJSON(w, http.StatusCreated, entry)
 }
 
 func (h *handler) getProductivity(w http.ResponseWriter, r *http.Request) {

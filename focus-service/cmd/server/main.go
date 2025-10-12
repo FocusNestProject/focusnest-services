@@ -18,6 +18,7 @@ import (
 	"github.com/focusnest/focus-service/internal/config"
 	"github.com/focusnest/focus-service/internal/httpapi"
 	"github.com/focusnest/focus-service/internal/productivity"
+	"github.com/focusnest/focus-service/internal/storage"
 )
 
 func main() {
@@ -44,6 +45,13 @@ func main() {
 		panic(fmt.Errorf("productivity service init error: %w", err))
 	}
 
+	// Initialize storage service
+	storageService, err := storage.NewService(ctx, "focusnest-media-470308")
+	if err != nil {
+		panic(fmt.Errorf("storage service init error: %w", err))
+	}
+	defer storageService.Close()
+
 	verifier, err := sharedauth.NewVerifier(sharedauth.Config{
 		Mode:     cfg.Auth.Mode,
 		JWKSURL:  cfg.Auth.JWKSURL,
@@ -59,7 +67,7 @@ func main() {
 			r.Use(sharedauth.Middleware(verifier))
 
 			// Register productivity routes
-			httpapi.RegisterRoutes(r, productivityService)
+			httpapi.RegisterRoutes(r, productivityService, storageService)
 		})
 	})
 
@@ -85,7 +93,7 @@ func newRepository(ctx context.Context, cfg config.Config) (productivity.Reposit
 			}
 		}
 
-		client, err := firestore.NewClient(ctx, cfg.GCPProjectID)
+		client, err := firestore.NewClientWithDatabase(ctx, cfg.GCPProjectID, "focusnest-prod")
 		if err != nil {
 			return nil, nil, fmt.Errorf("firestore client: %w", err)
 		}

@@ -43,7 +43,7 @@ func (r *firestoreRepository) UpdateProfile(profile *UserProfile) error {
 
 func (r *firestoreRepository) GetStats(userID string) (*UserStats, error) {
 	// This would typically aggregate data from activities
-	// For now, return mock data
+	// Return mock data for development
 	return &UserStats{
 		TotalSessions: 42,
 		TotalTime:     1200, // 20 hours
@@ -53,7 +53,7 @@ func (r *firestoreRepository) GetStats(userID string) (*UserStats, error) {
 
 func (r *firestoreRepository) GetStreaks(userID string) (*UserStreaks, error) {
 	// This would typically calculate streaks from activity data
-	// For now, return mock data
+	// Return mock data for development
 	return &UserStreaks{
 		CurrentStreak: 7,
 		LongestStreak: 15,

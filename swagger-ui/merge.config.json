@@ -3,6 +3,22 @@
     {
       "inputFile": "../gateway-api/api/openapi.yaml",
       "outputFile": "combined.yaml"
+    },
+    {
+      "inputFile": "../focus-service/api/openapi.yaml",
+      "outputFile": "combined.yaml"
+    },
+    {
+      "inputFile": "../progress-service/api/openapi.yaml",
+      "outputFile": "combined.yaml"
+    },
+    {
+      "inputFile": "../chatbot-service/api/openapi.yaml",
+      "outputFile": "combined.yaml"
+    },
+    {
+      "inputFile": "../user-service/api/openapi.yaml",
+      "outputFile": "combined.yaml"
     }
   ],
   "output": "combined.yaml"

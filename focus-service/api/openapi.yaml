@@ -273,16 +273,17 @@ components:
     ActivityImage:
       type: object
       properties:
-        original_path:
-          type: string
-        overview_path:
-          type: string
         original_url:
           type: string
           format: uri
+          description: Signed URL to the original image
         overview_url:
           type: string
           format: uri
+          description: Signed URL to the overview image (may be empty until processed)
+      required:
+        - original_url
+        - overview_url
     CreateProductivityRequest:
       type: object
       properties:
