@@ -9,60 +9,6 @@ servers:
   - url: http://localhost:8080
     description: Local development
 paths:
-  /healthz:
-    get:
-      operationId: getHealth
-      summary: Health check
-      tags:
-        - system
-      responses:
-        "200":
-          description: Service is healthy
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/HealthResponse"
-  /v1/progress:
-    get:
-      operationId: getProgress
-      summary: Get progress analytics for the authenticated user
-      tags:
-        - progress
-      security:
-        - bearerAuth: []
-      parameters:
-        - in: query
-          name: period
-          description: Time period for analytics (7d, 1m, 3m, 1y, all)
-          schema:
-            type: string
-            enum: [7d, 1m, 3m, 1y, all]
-            default: 1m
-        - in: query
-          name: start_date
-          description: Start date in YYYY-MM-DD format
-          schema:
-            type: string
-            format: date
-        - in: query
-          name: end_date
-          description: End date in YYYY-MM-DD format
-          schema:
-            type: string
-            format: date
-      responses:
-        "200":
-          description: Progress analytics
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProgressResponse"
-        "401":
-          description: Missing or invalid authentication token
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
   /v1/streaks/month:
     get:
       operationId: getMonthlyStreak
@@ -95,8 +41,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/MonthlyStreakData"
-        "401":
-          description: Missing or invalid authentication token
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error
           content:
             application/json:
               schema:
@@ -124,8 +76,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/WeeklyStreakData"
-        "401":
-          description: Missing or invalid authentication token
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error
           content:
             application/json:
               schema:
@@ -137,15 +95,6 @@ components:
       scheme: bearer
       bearerFormat: JWT
   schemas:
-    HealthResponse:
-      type: object
-      properties:
-        status:
-          type: string
-        service:
-          type: string
-        version:
-          type: string
     ErrorResponse:
       type: object
       properties:
@@ -158,90 +107,6 @@ components:
       required:
         - code
         - message
-    ProgressResponse:
-      type: object
-      properties:
-        period:
-          type: string
-        range:
-          type: object
-          properties:
-            start:
-              type: string
-              format: date-time
-            end:
-              type: string
-              format: date-time
-        stats:
-          type: object
-          properties:
-            total_elapsed_ms:
-              type: integer
-            total_sessions:
-              type: integer
-            total_hours:
-              type: number
-            streak:
-              type: object
-              properties:
-                current:
-                  type: integer
-                longest:
-                  type: integer
-                last_active:
-                  type: string
-                  format: date-time
-            by_category:
-              type: object
-              additionalProperties:
-                $ref: "#/components/schemas/CategoryStats"
-            by_period:
-              type: object
-              additionalProperties:
-                $ref: "#/components/schemas/PeriodStats"
-            hour_histogram:
-              type: object
-              additionalProperties:
-                type: integer
-        generated_at:
-          type: string
-          format: date-time
-      required:
-        - period
-        - range
-        - stats
-        - generated_at
-    CategoryStats:
-      type: object
-      properties:
-        elapsed_ms:
-          type: integer
-        sessions:
-          type: integer
-        hours:
-          type: number
-      required:
-        - elapsed_ms
-        - sessions
-        - hours
-    PeriodStats:
-      type: object
-      properties:
-        total_elapsed_ms:
-          type: integer
-        total_sessions:
-          type: integer
-        total_hours:
-          type: number
-        by_category:
-          type: object
-          additionalProperties:
-            $ref: "#/components/schemas/CategoryStats"
-      required:
-        - total_elapsed_ms
-        - total_sessions
-        - total_hours
-        - by_category
     MonthlyStreakData:
       type: object
       properties:

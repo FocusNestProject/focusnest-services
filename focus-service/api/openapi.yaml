@@ -9,61 +9,12 @@ servers:
   - url: http://localhost:8080
     description: Local development
 paths:
-  /healthz:
-    get:
-      operationId: getHealth
-      summary: Health check
-      tags:
-        - system
-      responses:
-        "200":
-          description: Service is healthy
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/HealthResponse"
-  /v1/focus/history-month:
-    get:
-      operationId: getHistoryMonth
-      summary: Get running month view with day slots and status
-      tags:
-        - focus
-      security:
-        - bearerAuth: []
-      parameters:
-        - in: query
-          name: month
-          description: Month (1-12). Defaults to current month.
-          schema:
-            type: integer
-            minimum: 1
-            maximum: 12
-        - in: query
-          name: year
-          description: Year (YYYY). Defaults to current year.
-          schema:
-            type: integer
-            minimum: 2020
-            maximum: 2030
-      responses:
-        "200":
-          description: Month view with daily status
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/MonthHistoryResponse"
-        "401":
-          description: Missing or invalid authentication token
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-  /v1/focus/productivity:
+  /v1/productivities:
     get:
       operationId: listProductivities
       summary: List productivity entries for the authenticated user (paginated)
       tags:
-        - focus
+        - productivities
       security:
         - bearerAuth: []
       parameters:
@@ -80,13 +31,31 @@ paths:
             type: integer
             minimum: 1
             maximum: 100
+        - in: query
+          name: startDate
+          description: Start date for filtering (YYYY-MM-DD)
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: endDate
+          description: End date for filtering (YYYY-MM-DD)
+          schema:
+            type: string
+            format: date
       responses:
         "200":
           description: Paginated list of productivity entries
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ListProductivitiesResponse"
+                $ref: "#/components/schemas/ProductivityListResponse"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "401":
           description: Missing or invalid authentication token
           content:
@@ -95,9 +64,9 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
     post:
       operationId: createProductivity
-      summary: Create/save productivity entry
+      summary: Create a new productivity entry
       tags:
-        - focus
+        - productivities
       security:
         - bearerAuth: []
       requestBody:
@@ -105,19 +74,47 @@ paths:
         content:
           multipart/form-data:
             schema:
-              $ref: "#/components/schemas/CreateProductivityRequest"
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CreateProductivityRequest"
+              type: object
+              properties:
+                category:
+                  type: string
+                  description: Category of the productivity entry
+                time_mode:
+                  type: string
+                  description: Time mode (e.g., Pomodoro, Focus, etc.)
+                description:
+                  type: string
+                  description: Description of the activity
+                mood:
+                  type: string
+                  description: Mood during the activity
+                cycles:
+                  type: integer
+                  description: Number of cycles completed
+                elapsed_ms:
+                  type: integer
+                  description: Elapsed time in milliseconds
+                start_at:
+                  type: string
+                  format: date-time
+                  description: Start time of the activity
+                end_at:
+                  type: string
+                  format: date-time
+                  description: End time of the activity
+                image:
+                  type: string
+                  format: binary
+                  description: Optional image file
       responses:
         "201":
           description: Productivity entry created successfully
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Activity"
+                $ref: "#/components/schemas/ProductivityEntry"
         "400":
-          description: Validation error
+          description: Bad request
           content:
             application/json:
               schema:
@@ -128,62 +125,59 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-  /v1/focus/productivity/{activity_id}:
+  /v1/productivities/{id}:
     get:
       operationId: getProductivity
-      summary: Retrieve a productivity entry by ID
+      summary: Get a specific productivity entry by ID
       tags:
-        - focus
+        - productivities
       security:
         - bearerAuth: []
       parameters:
         - in: path
-          name: activity_id
+          name: id
           required: true
           schema:
             type: string
+          description: Productivity entry ID
       responses:
         "200":
-          description: Productivity entry
+          description: Productivity entry retrieved successfully
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Activity"
+                $ref: "#/components/schemas/ProductivityEntry"
+        "404":
+          description: Productivity entry not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "401":
           description: Missing or invalid authentication token
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-        "404":
-          description: Entry not found
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-  /v1/focus/image-overview:retry:
-    post:
-      operationId: retryImageOverview
-      summary: Retry image overview generation
+    delete:
+      operationId: deleteProductivity
+      summary: Delete a productivity entry by ID
       tags:
-        - focus
+        - productivities
       security:
         - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/RetryImageOverviewRequest"
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+          description: Productivity entry ID
       responses:
-        "200":
-          description: Image overview generation triggered
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/RetryImageOverviewResponse"
-        "400":
-          description: Validation error
+        "204":
+          description: Productivity entry deleted successfully
+        "404":
+          description: Productivity entry not found
           content:
             application/json:
               schema:
@@ -201,15 +195,6 @@ components:
       scheme: bearer
       bearerFormat: JWT
   schemas:
-    HealthResponse:
-      type: object
-      properties:
-        status:
-          type: string
-        service:
-          type: string
-        version:
-          type: string
     ErrorResponse:
       type: object
       properties:
@@ -222,7 +207,7 @@ components:
       required:
         - code
         - message
-    Activity:
+    ProductivityEntry:
       type: object
       properties:
         id:
@@ -231,158 +216,79 @@ components:
           type: string
         category:
           type: string
-          enum: [Work, Study, Reading, Journaling, Cooking, Workout, Other]
         time_mode:
           type: string
-          enum: [Pomodoro, QuickFocus, FreeTimer, CustomTimer]
         description:
           type: string
         mood:
           type: string
         cycles:
           type: integer
-          minimum: 0
         elapsed_ms:
           type: integer
-          minimum: 0
         start_at:
           type: string
           format: date-time
         end_at:
           type: string
           format: date-time
-        image:
-          $ref: "#/components/schemas/ActivityImage"
         created_at:
           type: string
           format: date-time
         updated_at:
           type: string
           format: date-time
+        image:
+          $ref: "#/components/schemas/ImageInfo"
       required:
         - id
         - user_id
         - category
         - time_mode
-        - cycles
         - elapsed_ms
         - start_at
         - end_at
         - created_at
         - updated_at
-    ActivityImage:
+    ProductivityListResponse:
+      type: object
+      properties:
+        entries:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProductivityEntry"
+        page_info:
+          $ref: "#/components/schemas/PageInfo"
+      required:
+        - entries
+        - page_info
+    PageInfo:
+      type: object
+      properties:
+        page:
+          type: integer
+        page_size:
+          type: integer
+        total_pages:
+          type: integer
+        has_next:
+          type: boolean
+        has_previous:
+          type: boolean
+        next_token:
+          type: string
+      required:
+        - page
+        - page_size
+        - has_next
+        - has_previous
+    ImageInfo:
       type: object
       properties:
         original_url:
           type: string
-          format: uri
-          description: Signed URL to the original image
         overview_url:
           type: string
-          format: uri
-          description: Signed URL to the overview image (may be empty until processed)
       required:
         - original_url
         - overview_url
-    CreateProductivityRequest:
-      type: object
-      properties:
-        category:
-          type: string
-          enum: [Work, Study, Reading, Journaling, Cooking, Workout, Other]
-        time_mode:
-          type: string
-          enum: [Pomodoro, QuickFocus, FreeTimer, CustomTimer]
-        description:
-          type: string
-        mood:
-          type: string
-        cycles:
-          type: integer
-          minimum: 0
-        elapsed_ms:
-          type: integer
-          minimum: 0
-        start_at:
-          type: string
-          format: date-time
-        end_at:
-          type: string
-          format: date-time
-        image:
-          type: string
-          format: binary
-      required:
-        - category
-        - time_mode
-        - cycles
-        - elapsed_ms
-    MonthHistoryResponse:
-      type: object
-      properties:
-        month:
-          type: integer
-          minimum: 1
-          maximum: 12
-        year:
-          type: integer
-        days:
-          type: array
-          items:
-            $ref: "#/components/schemas/DayStatus"
-    DayStatus:
-      type: object
-      properties:
-        date:
-          type: string
-          format: date
-        status:
-          type: string
-          enum: [active, inactive, partial]
-        total_elapsed_ms:
-          type: integer
-        sessions:
-          type: integer
-    ListProductivitiesResponse:
-      type: object
-      properties:
-        data:
-          type: array
-          items:
-            $ref: "#/components/schemas/Activity"
-        pagination:
-          type: object
-          properties:
-            page:
-              type: integer
-            pageSize:
-              type: integer
-            totalPages:
-              type: integer
-            totalItems:
-              type: integer
-            hasNext:
-              type: boolean
-          required:
-            - page
-            - pageSize
-            - totalPages
-            - totalItems
-            - hasNext
-      required:
-        - data
-        - pagination
-    RetryImageOverviewRequest:
-      type: object
-      properties:
-        activity_id:
-          type: string
-      required:
-        - activity_id
-    RetryImageOverviewResponse:
-      type: object
-      properties:
-        success:
-          type: boolean
-        message:
-          type: string

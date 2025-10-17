@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -24,10 +23,10 @@ type config struct {
 	Port         string `validate:"required"`
 	JWKSURL      string
 	Issuer       string
-	ActivityURL  string
-	UserURL      string
-	AnalyticsURL string
-	ChatbotURL   string
+	ActivityURL  string // productivities
+	UserURL      string // users
+	AnalyticsURL string // progress
+	ChatbotURL   string // chatbot
 }
 
 func loadConfig() (config, error) {
@@ -52,7 +51,6 @@ func main() {
 
 	logger := logging.NewLogger("gateway-api")
 
-	// Initialize JWT verifier for authentication
 	verifier, err := sharedauth.NewVerifier(sharedauth.Config{
 		Mode:    sharedauth.ModeClerk,
 		JWKSURL: cfg.JWKSURL,
@@ -63,50 +61,19 @@ func main() {
 	}
 
 	router := sharedserver.NewRouter("gateway-api", func(r chi.Router) {
-		// Public routes (no authentication required)
-		r.Route("/public", func(r chi.Router) {
-			// Add any public endpoints here if needed
-		})
+		// Public: add if needed under /public
+		r.Route("/public", func(r chi.Router) {})
 
-		// Protected routes with authentication middleware
+		// Protected
 		r.Group(func(r chi.Router) {
 			r.Use(sharedauth.Middleware(verifier))
-			r.Use(proxyMiddleware(cfg, logger))
+			r.Use(userHeadersMiddleware(logger))
 
-			r.Route("/v1", func(r chi.Router) {
-				// Focus Service Routes (renamed from activity-service)
-				r.Route("/focus", func(r chi.Router) {
-					h := proxyHandler(cfg.ActivityURL, "/v1/focus", logger)
-					r.Get("/history-month", h)
-					r.Route("/productivity", func(r chi.Router) {
-						r.Get("/", h)
-						r.Post("/", h)
-						r.Get("/*", h)
-					})
-					r.Post("/image-overview:retry", h)
-				})
-
-				// Chatbot Service Routes
-				r.Route("/chatbot", func(r chi.Router) {
-					h := proxyHandler(cfg.ChatbotURL, "/v1/chatbot", logger)
-					r.Get("/history", h)
-					r.Post("/ask", h)
-				})
-
-				// Progress Service Routes
-				r.Route("/progress", func(r chi.Router) {
-					h := proxyHandler(cfg.AnalyticsURL, "/v1/progress", logger)
-					r.Get("/", h)
-				})
-
-				// User Service Routes
-				r.Route("/me", func(r chi.Router) {
-					h := proxyHandler(cfg.UserURL, "/v1/me", logger)
-					r.Get("/", h)
-					r.Patch("/", h)
-					r.Get("/streaks", h)
-				})
-			})
+			// Map each subtree to its upstream. We forward the full original path/query.
+			r.Mount("/v1/productivities", proxyTo(cfg.ActivityURL, logger))
+			r.Mount("/v1/progress", proxyTo(cfg.AnalyticsURL, logger))
+			r.Mount("/v1/chatbot", proxyTo(cfg.ChatbotURL, logger))
+			r.Mount("/v1/users", proxyTo(cfg.UserURL, logger))
 		})
 	})
 
@@ -123,11 +90,10 @@ func main() {
 	}
 }
 
-// proxyMiddleware adds user context to headers for downstream services
-func proxyMiddleware(cfg config, logger *slog.Logger) func(http.Handler) http.Handler {
+// Adds user context headers for downstream services.
+func userHeadersMiddleware(logger *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Add user context to headers for downstream services
 			if user, ok := sharedauth.UserFromContext(r.Context()); ok {
 				r.Header.Set("X-User-ID", user.UserID)
 				r.Header.Set("X-User-Session-ID", user.SessionID)
@@ -138,131 +104,88 @@ func proxyMiddleware(cfg config, logger *slog.Logger) func(http.Handler) http.Ha
 	}
 }
 
-// proxyHandler creates a reverse proxy handler for the given target URL
-func proxyHandler(targetURL, pathPrefix string, logger *slog.Logger) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		// Create a new request to the target service
-		// Chi strips the matched route prefix, so we need to reconstruct the full path
-		wildcardPath := chi.URLParam(r, "*")
+// proxyTo forwards requests to the given origin, preserving the original path and query.
+// It mints a Google ID token for the origin's audience (Cloud Run service-to-service).
+func proxyTo(origin string, logger *slog.Logger) http.Handler {
+	parsedOrigin, err := url.Parse(origin)
+	if err != nil {
+		panic(fmt.Errorf("invalid upstream origin %q: %w", origin, err))
+	}
+	audience := parsedOrigin.Scheme + "://" + parsedOrigin.Host
 
-		// Build full path: use original path if no wildcard
-		fullPath := pathPrefix
-		if wildcardPath != "" {
-			fullPath = pathPrefix + "/" + wildcardPath
-		} else if strings.HasPrefix(r.URL.Path, "/v1/focus/") {
-			// Extract the part after /v1/focus/ and append to pathPrefix
-			suffix := strings.TrimPrefix(r.URL.Path, "/v1/focus/")
-			if suffix != "" {
-				fullPath = pathPrefix + "/" + suffix
-			}
-		} else if strings.HasPrefix(r.URL.Path, "/v1/chatbot/") {
-			suffix := strings.TrimPrefix(r.URL.Path, "/v1/chatbot/")
-			if suffix != "" {
-				fullPath = pathPrefix + "/" + suffix
-			}
-		} else if strings.HasPrefix(r.URL.Path, "/v1/me/") {
-			suffix := strings.TrimPrefix(r.URL.Path, "/v1/me/")
-			if suffix != "" {
-				fullPath = pathPrefix + "/" + suffix
-			}
-		}
-		target := targetURL + fullPath
-
-		// Add query parameters if present
-		if r.URL.RawQuery != "" {
-			target += "?" + r.URL.RawQuery
-		}
-
-		logger.Info("proxy target", "url", target, "method", r.Method, "original_path", r.URL.Path, "wildcard", wildcardPath)
-
-		// Parse targetURL to get origin (scheme + host only) for ID token audience
-		parsedURL, err := url.Parse(targetURL)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Create an ID-token-authenticated client for this audience.
+		client, err := idtoken.NewClient(r.Context(), audience)
 		if err != nil {
-			logger.Error("invalid target URL", "error", err, "targetURL", targetURL)
+			logger.Error("idtoken client error", "audience", audience, "err", err)
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			return
 		}
-		audience := parsedURL.Scheme + "://" + parsedURL.Host
 
-		// Create authenticated HTTP client for Cloud Run service-to-service calls
-		ctx := r.Context()
-		client, err := idtoken.NewClient(ctx, audience)
-		if err != nil {
-			logger.Error("failed to create auth client", "error", err, "audience", audience)
-			http.Error(w, fmt.Sprintf("Internal Server Error creating auth client: %v", err), http.StatusInternalServerError)
-			return
+		// Build target URL: origin + original path + query.
+		targetURL := &url.URL{
+			Scheme:   parsedOrigin.Scheme,
+			Host:     parsedOrigin.Host,
+			Path:     r.URL.Path,     // preserve full path (already includes /v1/...)
+			RawQuery: r.URL.RawQuery, // preserve query
 		}
 
-		// Create new request
-		req, err := http.NewRequestWithContext(ctx, r.Method, target, r.Body)
+		// Prepare outgoing request with same method/body and copied headers (except hop-by-hop).
+		req, err := http.NewRequestWithContext(r.Context(), r.Method, targetURL.String(), r.Body)
 		if err != nil {
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			return
 		}
 
-		// Copy only safe headers (skip Host, Authorization, and connection headers)
-		skipHeaders := map[string]bool{
-			"Host":                true,
-			"Authorization":       true,
-			"Connection":          true,
-			"Keep-Alive":          true,
-			"Proxy-Authenticate":  true,
-			"Proxy-Authorization": true,
-			"Te":                  true,
-			"Trailer":             true,
-			"Transfer-Encoding":   true,
-			"Upgrade":             true,
-		}
+		copyHeaders(req.Header, r.Header)
 
-		for key, values := range r.Header {
-			if skipHeaders[key] {
-				continue
-			}
-			for _, value := range values {
-				req.Header.Add(key, value)
-			}
-		}
-
-		// Log the complete outgoing request details for debugging
-		var headersBuilder strings.Builder
-		for key, values := range req.Header {
-			headersBuilder.WriteString(fmt.Sprintf("%s: %s\n", key, strings.Join(values, ", ")))
-		}
-		logger.Info("sending request to downstream service",
-			"target", target,
-			"method", req.Method,
-			"headers", headersBuilder.String(),
-		)
-
-		// Make request to target service
+		// Do the request
 		resp, err := client.Do(req)
 		if err != nil {
-			logger.Error("failed to make request to downstream service", "error", err, "target", target)
+			logger.Error("downstream request failed", "target", targetURL.String(), "err", err)
 			http.Error(w, "Service Unavailable", http.StatusServiceUnavailable)
 			return
 		}
 		defer resp.Body.Close()
 
-		// Read the body of the response
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
-			logger.Error("failed to read downstream response body", "error", err, "target", target)
+			logger.Error("read downstream body failed", "target", targetURL.String(), "err", err)
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			return
 		}
 
-		// Log the downstream response details
-		logger.Info("received response from downstream", "target", target, "status_code", resp.StatusCode, "body", string(body))
-
-		// Copy response headers
-		for key, values := range resp.Header {
-			for _, value := range values {
-				w.Header().Add(key, value)
+		// Mirror response
+		for k, vv := range resp.Header {
+			for _, v := range vv {
+				w.Header().Add(k, v)
 			}
 		}
-
-		// Set status code and write the body we already read
 		w.WriteHeader(resp.StatusCode)
-		w.Write(body)
+		_, _ = w.Write(body)
+	})
+}
+
+func copyHeaders(dst, src http.Header) {
+	// Hop-by-hop headers to skip
+	skip := map[string]struct{}{
+		"Host":                {},
+		"Authorization":       {}, // idtoken client sets its own auth
+		"Connection":          {},
+		"Keep-Alive":          {},
+		"Proxy-Authenticate":  {},
+		"Proxy-Authorization": {},
+		"Te":                  {},
+		"Trailer":             {},
+		"Transfer-Encoding":   {},
+		"Upgrade":             {},
+	}
+	for k, vv := range src {
+		if _, found := skip[k]; found {
+			continue
+		}
+		for _, v := range vv {
+			dst.Add(k, v)
+		}
 	}
 }
