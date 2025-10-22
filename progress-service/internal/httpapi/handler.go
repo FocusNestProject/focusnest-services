@@ -1,9 +1,9 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -12,146 +12,181 @@ import (
 	"github.com/focusnest/progress-service/internal/progress"
 )
 
-// Response shapes (kept for docs; actual data for streaks comes from service)
-type monthlyStreakResponse struct {
-	Month         int         `json:"month"`
-	Year          int         `json:"year"`
-	TotalStreak   int         `json:"total_streak"`
-	CurrentStreak int         `json:"current_streak"`
-	Days          []dayStatus `json:"days"`
-}
+const (
+	serviceTimeout  = 8 * time.Second
+	defaultDaysBack = 30
+	minYear         = 1970
+	maxYear         = 2100
+	dateLayout      = "2006-01-02"
+)
 
-type weeklyStreakResponse struct {
-	Week          string      `json:"week"` // YYYY-WW
-	TotalStreak   int         `json:"total_streak"`
-	CurrentStreak int         `json:"current_streak"`
-	Days          []dayStatus `json:"days"`
-}
-
-type dayStatus struct {
-	Date   string `json:"date"`   // YYYY-MM-DD
-	Day    string `json:"day"`    // Monday, Tuesday, etc.
-	Status string `json:"status"` // active, skipped, upcoming
-}
-
-// RegisterRoutes registers all progress routes under /v1/progress
-// Streak endpoints live under /v1/progress/streaks/*
+// RegisterRoutes defines all /v1/progress routes
 func RegisterRoutes(r chi.Router, service progress.Service) {
 	r.Route("/v1/progress", func(r chi.Router) {
-		r.Use(middleware.Logger)
 		r.Use(middleware.Recoverer)
 
-		// Summary/progress stats (last 30 days by default)
+		// Summary: last 30 days
 		r.Get("/", getProgress(service))
 
-		// Streaks (no /current)
+		// Streaks
 		r.Route("/streaks", func(r chi.Router) {
 			r.Get("/month", getMonthlyStreak(service))
 			r.Get("/week", getWeeklyStreak(service))
+			r.Get("/current", getCurrentStreak(service))
 		})
 	})
 }
 
+// GET /v1/progress
+// Returns summary stats for the last 30 days
 func getProgress(service progress.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		userID := r.Header.Get("x-user-id")
+		userID := headerUserID(r)
 		if userID == "" {
-			http.Error(w, "user ID required", http.StatusBadRequest)
+			writeError(w, http.StatusUnauthorized, "missing user ID")
 			return
 		}
 
-		// Default to last 30 days
-		endDate := time.Now()
-		startDate := endDate.AddDate(0, 0, -30)
+		end := time.Now().UTC()
+		start := end.AddDate(0, 0, -defaultDaysBack)
 
-		stats, err := service.GetProgress(userID, startDate, endDate)
+		ctx, cancel := context.WithTimeout(r.Context(), serviceTimeout)
+		defer cancel()
+
+		stats, err := service.GetProgress(ctx, userID, start, end)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			writeError(w, http.StatusInternalServerError, "internal server error")
 			return
 		}
 
-		resp := map[string]interface{}{
+		writeJSON(w, http.StatusOK, map[string]any{
 			"total_time":     stats.TotalTime,
 			"total_sessions": stats.TotalSessions,
 			"categories":     stats.Categories,
 			"periods":        stats.Periods,
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(resp)
+		})
 	}
 }
 
-// GET /v1/progress/streaks/month?month=1-12&year=YYYY
+// GET /v1/progress/streaks/month?date=YYYY-MM-DD
 func getMonthlyStreak(service progress.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		userID := r.Header.Get("x-user-id")
+		userID := headerUserID(r)
 		if userID == "" {
-			http.Error(w, "user ID required", http.StatusBadRequest)
+			writeError(w, http.StatusUnauthorized, "missing user ID")
 			return
 		}
 
-		q := r.URL.Query()
-		monthStr := q.Get("month")
-		yearStr := q.Get("year")
-
-		now := time.Now().UTC()
-		month := int(now.Month())
-		year := now.Year()
-
-		if monthStr != "" {
-			if m, err := strconv.Atoi(monthStr); err == nil && m >= 1 && m <= 12 {
-				month = m
-			}
+		target, ok := optionalDate(r.URL.Query().Get("date"))
+		if !ok {
+			writeError(w, http.StatusBadRequest, "invalid date format, use YYYY-MM-DD")
+			return
 		}
-		if yearStr != "" {
-			if y, err := strconv.Atoi(yearStr); err == nil && y >= 2020 && y <= 2030 {
-				year = y
-			}
+		target = target.UTC()
+
+		year, month := target.Year(), target.Month()
+		if year < minYear || year > maxYear {
+			writeError(w, http.StatusBadRequest, "invalid year (1970–2100)")
+			return
 		}
 
-		data, err := service.GetMonthlyStreak(r.Context(), userID, month, year)
+		ctx, cancel := context.WithTimeout(r.Context(), serviceTimeout)
+		defer cancel()
+
+		data, err := service.GetMonthlyStreak(ctx, userID, int(month), year)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			writeError(w, http.StatusInternalServerError, "internal server error")
 			return
 		}
 
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(data)
+		writeJSON(w, http.StatusOK, data)
 	}
 }
 
-// GET /v1/progress/streaks/week?date=YYYY-MM-DD (optional; defaults to current week)
+// GET /v1/progress/streaks/week?date=YYYY-MM-DD
 func getWeeklyStreak(service progress.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		userID := r.Header.Get("x-user-id")
+		userID := headerUserID(r)
 		if userID == "" {
-			http.Error(w, "user ID required", http.StatusBadRequest)
+			writeError(w, http.StatusUnauthorized, "missing user ID")
 			return
 		}
 
-		q := r.URL.Query()
-		dateStr := q.Get("date") // optional
-
-		var target time.Time
-		if dateStr != "" {
-			parsed, err := time.Parse("2006-01-02", dateStr)
-			if err != nil {
-				http.Error(w, "invalid date format, use YYYY-MM-DD", http.StatusBadRequest)
-				return
-			}
-			target = parsed
-		} else {
-			target = time.Now().UTC()
+		target, ok := optionalDate(r.URL.Query().Get("date"))
+		if !ok {
+			writeError(w, http.StatusBadRequest, "invalid date format, use YYYY-MM-DD")
+			return
 		}
+		target = startOfDayUTC(target.UTC())
 
-		data, err := service.GetWeeklyStreak(r.Context(), userID, target)
+		ctx, cancel := context.WithTimeout(r.Context(), serviceTimeout)
+		defer cancel()
+
+		data, err := service.GetWeeklyStreak(ctx, userID, target)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			writeError(w, http.StatusInternalServerError, "internal server error")
 			return
 		}
 
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(data)
+		writeJSON(w, http.StatusOK, data)
 	}
+}
+
+// GET /v1/progress/streaks/current
+// Returns the current (last 30 days) streak data
+func getCurrentStreak(service progress.Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID := headerUserID(r)
+		if userID == "" {
+			writeError(w, http.StatusUnauthorized, "missing user ID")
+			return
+		}
+
+		ctx, cancel := context.WithTimeout(r.Context(), serviceTimeout)
+		defer cancel()
+
+		data, err := service.GetCurrentStreak(ctx, userID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "internal server error")
+			return
+		}
+
+		writeJSON(w, http.StatusOK, data)
+	}
+}
+
+// Helpers
+
+// headerUserID gets the user ID from headers, case-insensitive.
+func headerUserID(r *http.Request) string {
+	if v := r.Header.Get("X-User-ID"); v != "" {
+		return v
+	}
+	return r.Header.Get("x-user-id")
+}
+
+// optionalDate parses YYYY-MM-DD; if empty, returns today UTC.
+func optionalDate(s string) (time.Time, bool) {
+	if s == "" {
+		return time.Now().UTC(), true
+	}
+	t, err := time.Parse(dateLayout, s)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return t, true
+}
+
+func startOfDayUTC(t time.Time) time.Time {
+	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
+}
+
+func writeJSON(w http.ResponseWriter, status int, payload any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(payload)
+}
+
+func writeError(w http.ResponseWriter, status int, message string) {
+	writeJSON(w, status, map[string]string{"error": message})
 }

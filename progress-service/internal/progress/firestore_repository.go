@@ -18,14 +18,12 @@ func NewFirestoreRepository(client *firestore.Client) Repository {
 	return &firestoreRepository{client: client}
 }
 
-func (r *firestoreRepository) GetDailySummaries(userID string, startDate, endDate time.Time) ([]*DailySummary, error) {
-	ctx := context.Background()
-	
-	// First try to get from daily_summaries collection
+func (r *firestoreRepository) GetDailySummaries(ctx context.Context, userID string, startDate, endDate time.Time) ([]*DailySummary, error) {
+	// Use [start, end) everywhere for consistency
 	iter := r.client.Collection("daily_summaries").
 		Where("user_id", "==", userID).
 		Where("date", ">=", startDate).
-		Where("date", "<=", endDate).
+		Where("date", "<", endDate).
 		OrderBy("date", firestore.Asc).
 		Documents(ctx)
 
@@ -43,23 +41,24 @@ func (r *firestoreRepository) GetDailySummaries(userID string, startDate, endDat
 		if err := doc.DataTo(&summary); err != nil {
 			return nil, fmt.Errorf("unmarshal summary: %w", err)
 		}
+		// Ensure not persisted; but we expose the doc id to caller
 		summary.ID = doc.Ref.ID
+		if summary.Categories == nil {
+			summary.Categories = map[string]int{}
+		}
 		summaries = append(summaries, &summary)
 	}
 
-	// If no daily summaries found, try to aggregate from productivities
+	// If no daily summaries found, aggregate from productivities
 	if len(summaries) == 0 {
-		return r.aggregateFromProductivities(userID, startDate, endDate)
+		return r.aggregateFromProductivities(ctx, userID, startDate, endDate)
 	}
-	
 	return summaries, nil
 }
 
 // aggregateFromProductivities reads from productivities collection and creates daily summaries
-func (r *firestoreRepository) aggregateFromProductivities(userID string, startDate, endDate time.Time) ([]*DailySummary, error) {
-	ctx := context.Background()
-	
-	// Query productivities collection
+func (r *firestoreRepository) aggregateFromProductivities(ctx context.Context, userID string, startDate, endDate time.Time) ([]*DailySummary, error) {
+	// Query productivities collection using [start, end)
 	iter := r.client.Collection("users").Doc(userID).Collection("productivities").
 		Where("start_at", ">=", startDate).
 		Where("start_at", "<", endDate).
@@ -69,7 +68,7 @@ func (r *firestoreRepository) aggregateFromProductivities(userID string, startDa
 
 	// Group by day
 	dayMap := make(map[string]*DailySummary)
-	
+
 	for {
 		doc, err := iter.Next()
 		if err == iterator.Done {
@@ -84,25 +83,30 @@ func (r *firestoreRepository) aggregateFromProductivities(userID string, startDa
 			ElapsedMs int       `firestore:"elapsed_ms"`
 			Category  string    `firestore:"category"`
 		}
-		
+
 		if err := doc.DataTo(&entry); err != nil {
 			continue // Skip invalid entries
 		}
 
-		// Get day string
+		// Convert elapsed to minutes
+		mins := entry.ElapsedMs / (1000 * 60)
+
+		// Day key in YYYY-MM-DD (UTC based on stored StartAt)
 		dayStr := entry.StartAt.Format("2006-01-02")
-		
+
 		// Create or update daily summary
 		if summary, exists := dayMap[dayStr]; exists {
-			summary.TotalTime += entry.ElapsedMs / (1000 * 60) // Convert to minutes
-			summary.Categories[entry.Category]++
+			summary.TotalTime += mins
+			summary.Categories[entry.Category] += mins
+			summary.Sessions++
 		} else {
 			dayMap[dayStr] = &DailySummary{
-				ID:         doc.Ref.ID,
+				ID:         dayStr, // stable per-day id
 				UserID:     userID,
 				Date:       entry.StartAt.Truncate(24 * time.Hour),
-				TotalTime:  entry.ElapsedMs / (1000 * 60), // Convert to minutes
-				Categories: map[string]int{entry.Category: 1},
+				TotalTime:  mins,
+				Categories: map[string]int{entry.Category: mins},
+				Sessions:   1,
 				CreatedAt:  time.Now(),
 				UpdatedAt:  time.Now(),
 			}
@@ -110,16 +114,16 @@ func (r *firestoreRepository) aggregateFromProductivities(userID string, startDa
 	}
 
 	// Convert map to slice
-	var summaries []*DailySummary
-	for _, summary := range dayMap {
-		summaries = append(summaries, summary)
+	summaries := make([]*DailySummary, 0, len(dayMap))
+	for _, s := range dayMap {
+		summaries = append(summaries, s)
 	}
 
 	return summaries, nil
 }
 
-func (r *firestoreRepository) GetProgressStats(userID string, startDate, endDate time.Time) (*ProgressStats, error) {
-	summaries, err := r.GetDailySummaries(userID, startDate, endDate)
+func (r *firestoreRepository) GetProgressStats(ctx context.Context, userID string, startDate, endDate time.Time) (*ProgressStats, error) {
+	summaries, err := r.GetDailySummaries(ctx, userID, startDate, endDate)
 	if err != nil {
 		return nil, err
 	}
@@ -131,21 +135,20 @@ func (r *firestoreRepository) GetProgressStats(userID string, startDate, endDate
 		Periods:       make(map[string]interface{}),
 	}
 
-	for _, summary := range summaries {
-		stats.TotalTime += summary.TotalTime
-		stats.TotalSessions++
-
-		for category, time := range summary.Categories {
-			stats.Categories[category] += time
+	for _, s := range summaries {
+		stats.TotalTime += s.TotalTime
+		stats.TotalSessions += s.Sessions
+		for cat, mins := range s.Categories {
+			stats.Categories[cat] += mins
 		}
 	}
 
-	// Calculate period stats
+	// Caller defines the period semantics via start/end.
+	// Here we just mirror totals for convenience buckets.
 	stats.Periods["week"] = map[string]interface{}{
 		"total_time": stats.TotalTime,
 		"sessions":   stats.TotalSessions,
 	}
-
 	stats.Periods["month"] = map[string]interface{}{
 		"total_time": stats.TotalTime,
 		"sessions":   stats.TotalSessions,
