@@ -15,7 +15,6 @@ jobs:
     if: github.ref == 'refs/heads/main'
     outputs:
       url: ${{ steps.deploy.outputs.url }}
-    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -29,18 +28,18 @@ jobs:
         uses: google-github-actions/setup-gcloud@v2
 
       - name: Configure Docker to use gcloud as a credential helper
-        run: gcloud auth configure-docker asia-southeast2-docker.pkg.dev
+        run: gcloud auth configure-docker $ARTIFACT_REGISTRY
 
       - name: Build and push Focus Service
         run: |
-          docker build -f focus-service/Dockerfile -t asia-southeast2-docker.pkg.dev/$PROJECT_ID/docker-images/focus-service:$GITHUB_SHA .
-          docker push asia-southeast2-docker.pkg.dev/$PROJECT_ID/docker-images/focus-service:$GITHUB_SHA
+          docker build -f focus-service/Dockerfile -t $ARTIFACT_REGISTRY/$PROJECT_ID/docker-images/focus-service:$GITHUB_SHA .
+          docker push $ARTIFACT_REGISTRY/$PROJECT_ID/docker-images/focus-service:$GITHUB_SHA
 
       - name: Deploy Focus Service
         id: deploy
         run: |
           gcloud run deploy focus-service \
-            --image asia-southeast2-docker.pkg.dev/$PROJECT_ID/docker-images/focus-service:$GITHUB_SHA \
+            --image $ARTIFACT_REGISTRY/$PROJECT_ID/docker-images/focus-service:$GITHUB_SHA \
             --platform managed \
             --region $REGION \
             --no-allow-unauthenticated \
@@ -57,7 +56,6 @@ jobs:
     if: github.ref == 'refs/heads/main'
     outputs:
       url: ${{ steps.deploy.outputs.url }}
-    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -71,18 +69,18 @@ jobs:
         uses: google-github-actions/setup-gcloud@v2
 
       - name: Configure Docker to use gcloud as a credential helper
-        run: gcloud auth configure-docker asia-southeast2-docker.pkg.dev
+        run: gcloud auth configure-docker $ARTIFACT_REGISTRY
 
       - name: Build and push Chatbot Service
         run: |
-          docker build -f chatbot-service/Dockerfile -t asia-southeast2-docker.pkg.dev/$PROJECT_ID/docker-images/chatbot-service:$GITHUB_SHA .
-          docker push asia-southeast2-docker.pkg.dev/$PROJECT_ID/docker-images/chatbot-service:$GITHUB_SHA
+          docker build -f chatbot-service/Dockerfile -t $ARTIFACT_REGISTRY/$PROJECT_ID/docker-images/chatbot-service:$GITHUB_SHA .
+          docker push $ARTIFACT_REGISTRY/$PROJECT_ID/docker-images/chatbot-service:$GITHUB_SHA
 
       - name: Deploy Chatbot Service
         id: deploy
         run: |
           gcloud run deploy chatbot-service \
-            --image asia-southeast2-docker.pkg.dev/$PROJECT_ID/docker-images/chatbot-service:$GITHUB_SHA \
+            --image $ARTIFACT_REGISTRY/$PROJECT_ID/docker-images/chatbot-service:$GITHUB_SHA \
             --platform managed \
             --region $REGION \
             --no-allow-unauthenticated \
@@ -98,7 +96,6 @@ jobs:
     if: github.ref == 'refs/heads/main'
     outputs:
       url: ${{ steps.deploy.outputs.url }}
-    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -112,18 +109,18 @@ jobs:
         uses: google-github-actions/setup-gcloud@v2
 
       - name: Configure Docker to use gcloud as a credential helper
-        run: gcloud auth configure-docker asia-southeast2-docker.pkg.dev
+        run: gcloud auth configure-docker $ARTIFACT_REGISTRY
 
       - name: Build and push Progress Service
         run: |
-          docker build -f progress-service/Dockerfile -t asia-southeast2-docker.pkg.dev/$PROJECT_ID/docker-images/progress-service:$GITHUB_SHA .
-          docker push asia-southeast2-docker.pkg.dev/$PROJECT_ID/docker-images/progress-service:$GITHUB_SHA
+          docker build -f progress-service/Dockerfile -t $ARTIFACT_REGISTRY/$PROJECT_ID/docker-images/progress-service:$GITHUB_SHA .
+          docker push $ARTIFACT_REGISTRY/$PROJECT_ID/docker-images/progress-service:$GITHUB_SHA
 
       - name: Deploy Progress Service
         id: deploy
         run: |
           gcloud run deploy progress-service \
-            --image asia-southeast2-docker.pkg.dev/$PROJECT_ID/docker-images/progress-service:$GITHUB_SHA \
+            --image $ARTIFACT_REGISTRY/$PROJECT_ID/docker-images/progress-service:$GITHUB_SHA \
             --platform managed \
             --region $REGION \
             --no-allow-unauthenticated \
@@ -139,7 +136,6 @@ jobs:
     if: github.ref == 'refs/heads/main'
     outputs:
       url: ${{ steps.deploy.outputs.url }}
-    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -153,18 +149,18 @@ jobs:
         uses: google-github-actions/setup-gcloud@v2
 
       - name: Configure Docker to use gcloud as a credential helper
-        run: gcloud auth configure-docker asia-southeast2-docker.pkg.dev
+        run: gcloud auth configure-docker $ARTIFACT_REGISTRY
 
       - name: Build and push User Service
         run: |
-          docker build -f user-service/Dockerfile -t asia-southeast2-docker.pkg.dev/$PROJECT_ID/docker-images/user-service:$GITHUB_SHA .
-          docker push asia-southeast2-docker.pkg.dev/$PROJECT_ID/docker-images/user-service:$GITHUB_SHA
+          docker build -f user-service/Dockerfile -t $ARTIFACT_REGISTRY/$PROJECT_ID/docker-images/user-service:$GITHUB_SHA .
+          docker push $ARTIFACT_REGISTRY/$PROJECT_ID/docker-images/user-service:$GITHUB_SHA
 
       - name: Deploy User Service
         id: deploy
         run: |
           gcloud run deploy user-service \
-            --image asia-southeast2-docker.pkg.dev/$PROJECT_ID/docker-images/user-service:$GITHUB_SHA \
+            --image $ARTIFACT_REGISTRY/$PROJECT_ID/docker-images/user-service:$GITHUB_SHA \
             --platform managed \
             --region $REGION \
             --no-allow-unauthenticated \
@@ -179,7 +175,6 @@ jobs:
     needs: [deploy-focus-service, deploy-chatbot-service, deploy-progress-service, deploy-user-service]
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
-    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -193,17 +188,18 @@ jobs:
         uses: google-github-actions/setup-gcloud@v2
 
       - name: Configure Docker to use gcloud as a credential helper
-        run: gcloud auth configure-docker asia-southeast2-docker.pkg.dev
+        run: gcloud auth configure-docker $ARTIFACT_REGISTRY
 
       - name: Build and push Gateway API
         run: |
-          docker build -f gateway-api/Dockerfile -t asia-southeast2-docker.pkg.dev/$PROJECT_ID/docker-images/gateway-api:$GITHUB_SHA .
-          docker push asia-southeast2-docker.pkg.dev/$PROJECT_ID/docker-images/gateway-api:$GITHUB_SHA
+          docker build -f gateway-api/Dockerfile -t $ARTIFACT_REGISTRY/$PROJECT_ID/docker-images/gateway-api:$GITHUB_SHA .
+          docker push $ARTIFACT_REGISTRY/$PROJECT_ID/docker-images/gateway-api:$GITHUB_SHA
 
       - name: Deploy Gateway API
+        id: deploy
         run: |
           gcloud run deploy gateway-api \
-            --image asia-southeast2-docker.pkg.dev/$PROJECT_ID/docker-images/gateway-api:$GITHUB_SHA \
+            --image $ARTIFACT_REGISTRY/$PROJECT_ID/docker-images/gateway-api:$GITHUB_SHA \
             --platform managed \
             --region $REGION \
             --allow-unauthenticated \
@@ -219,89 +215,14 @@ jobs:
         id: gateway-url
         run: |
           URL=$(gcloud run services describe gateway-api --platform managed --region $REGION --format 'value(status.url)')
-          echo "Gateway deployed to: $URL"
           echo "url=$URL" >> $GITHUB_OUTPUT
 
       - name: Output Service URLs
         run: |
-          echo "## 🚀 Deployment Complete!" >> $GITHUB_STEP_SUMMARY
+          echo "## Deployment Complete!" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Gateway API:** ${{ steps.gateway-url.outputs.url }}" >> $GITHUB_STEP_SUMMARY
           echo "**Focus Service:** ${{ needs.deploy-focus-service.outputs.url }}" >> $GITHUB_STEP_SUMMARY
           echo "**Chatbot Service:** ${{ needs.deploy-chatbot-service.outputs.url }}" >> $GITHUB_STEP_SUMMARY
           echo "**Progress Service:** ${{ needs.deploy-progress-service.outputs.url }}" >> $GITHUB_STEP_SUMMARY
           echo "**User Service:** ${{ needs.deploy-user-service.outputs.url }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Swagger UI:** ${{ needs.deploy-swagger-ui.outputs.url }}" >> $GITHUB_STEP_SUMMARY
-
-  deploy-swagger-ui:
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
-    outputs:
-      url: ${{ steps.deploy.outputs.url }}
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v2
-        with:
-          credentials_json: ${{ secrets.GCP_SA_KEY }}
-
-      - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v2
-
-      - name: Configure Docker
-        run: gcloud auth configure-docker $ARTIFACT_REGISTRY
-
-      - name: Merge OpenAPI specs
-        run: |
-          cd swagger-ui
-          # Create a basic combined OpenAPI spec
-          cat > combined.yaml << 'EOF'
-          openapi: 3.1.0
-          info:
-            title: FocusNest API
-            version: 1.0.0
-            description: Complete FocusNest microservices API
-          servers:
-            - url: https://api.focusnest.com
-              description: Production
-            - url: http://localhost:8080
-              description: Local development
-          paths: {}
-          components:
-            securitySchemes:
-              bearerAuth:
-                type: http
-                scheme: bearer
-                bearerFormat: JWT
-            schemas: {}
-          EOF
-
-      - name: Build and Push Swagger UI
-        run: |
-          cd swagger-ui
-          docker build -t asia-southeast2-docker.pkg.dev/$PROJECT_ID/docker-images/swagger-ui:$GITHUB_SHA .
-          docker push asia-southeast2-docker.pkg.dev/$PROJECT_ID/docker-images/swagger-ui:$GITHUB_SHA
-
-      - name: Deploy Swagger UI
-        id: deploy
-        run: |
-          gcloud run deploy swagger-ui \
-            --image asia-southeast2-docker.pkg.dev/$PROJECT_ID/docker-images/swagger-ui:$GITHUB_SHA \
-            --platform managed \
-            --region $REGION \
-            --allow-unauthenticated \
-            --ingress all \
-            --port 8080 \
-            --set-env-vars SWAGGER_JSON_URL=/combined.yaml \
-            --memory 512Mi \
-            --cpu 1 \
-            --max-instances 5
-
-      - name: Get Swagger UI URL
-        run: |
-          URL=$(gcloud run services describe swagger-ui --platform managed --region $REGION --format 'value(status.url)')
-          echo "Swagger UI deployed to: $URL"
-          echo "url=$URL" >> $GITHUB_OUTPUT
