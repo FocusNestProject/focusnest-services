@@ -1,49 +1,37 @@
+version: "3.9"
+
 services:
-  # Gateway API - Main entry point with authentication and routing
-  gateway-api:
-    build:
-      context: .
-      dockerfile: gateway-api/Dockerfile
-    environment:
-      PORT: "8080"
-      CLERK_JWKS_URL: "${CLERK_JWKS_URL}"
-      CLERK_AUDIENCE: "${CLERK_AUDIENCE}"
-      CLERK_ISSUER: "${CLERK_ISSUER}"
-      ACTIVITY_URL: "http://focus-service:8080"
-      USER_URL: "http://user-service:8080"
-      SESSION_URL: "http://session-service:8080"
-      MEDIA_URL: "http://media-service:8080"
-      ANALYTICS_URL: "http://progress-service:8080"
-      WEBHOOK_URL: "http://webhook-service:8080"
+  # Firebase Emulator for local Firestore
+  firebase-emulator:
+    image: gcr.io/google.com/cloudsdktool/cloud-sdk:474.0.0-emulators
+    command: >
+      gcloud beta emulators firestore start --host-port=0.0.0.0:8080
     ports:
-      - "8080:8080"
-    depends_on:
-      - focus-service
-      - chatbot-service
-      - progress-service
-      - user-service
-      - session-service
-      - media-service
-      - webhook-service
+      - "8088:8080"
+    healthcheck:
+      test: ["CMD", "bash", "-lc", "nc -z localhost 8080"]
+      interval: 5s
+      timeout: 2s
+      retries: 20
 
-
-  # Focus Service - Activity tracking and productivity management
+  # Focus Service - Activities
   focus-service:
     build:
       context: .
       dockerfile: focus-service/Dockerfile
     environment:
       PORT: "8080"
-      AUTH_MODE: "noop"  # Use noop for development, set to "clerk" for production
-      DATASTORE: "firestore"  # Use firestore for NoSQL data
+      AUTH_MODE: "noop"
+      DATASTORE: "firestore"
       GCP_PROJECT_ID: "focusnest-dev"
       FIRESTORE_EMULATOR_HOST: "firebase-emulator:8080"
+    depends_on:
+      firebase-emulator:
+        condition: service_healthy
     ports:
       - "8081:8080"
-    depends_on:
-      - firebase-emulator
 
-  # Chatbot Service - LLM integration and chat persistence
+  # Chatbot Service - LLM/chat
   chatbot-service:
     build:
       context: .
@@ -52,12 +40,13 @@ services:
       PORT: "8080"
       GCP_PROJECT_ID: "focusnest-dev"
       FIRESTORE_EMULATOR_HOST: "firebase-emulator:8080"
+    depends_on:
+      firebase-emulator:
+        condition: service_healthy
     ports:
       - "8082:8080"
-    depends_on:
-      - firebase-emulator
 
-  # Progress Service - Analytics and daily summaries
+  # Progress Service - Analytics
   progress-service:
     build:
       context: .
@@ -66,10 +55,11 @@ services:
       PORT: "8080"
       GCP_PROJECT_ID: "focusnest-dev"
       FIRESTORE_EMULATOR_HOST: "firebase-emulator:8080"
+    depends_on:
+      firebase-emulator:
+        condition: service_healthy
     ports:
       - "8083:8080"
-    depends_on:
-      - firebase-emulator
 
   # User Service
   user-service:
@@ -80,71 +70,32 @@ services:
       PORT: "8080"
       GCP_PROJECT_ID: "focusnest-dev"
       FIRESTORE_EMULATOR_HOST: "firebase-emulator:8080"
-    ports:
-      - "8082:8080"
     depends_on:
-      - firebase-emulator
-
-  # Session Service
-  session-service:
-    build:
-      context: .
-      dockerfile: session-service/Dockerfile
-    environment:
-      PORT: "8080"
-      GCP_PROJECT_ID: "focusnest-dev"
-      FIRESTORE_EMULATOR_HOST: "firebase-emulator:8080"
-    ports:
-      - "8083:8080"
-    depends_on:
-      - firebase-emulator
-
-  # Media Service
-  media-service:
-    build:
-      context: .
-      dockerfile: media-service/Dockerfile
-    environment:
-      PORT: "8080"
-      GCP_PROJECT_ID: "focusnest-dev"
-      FIRESTORE_EMULATOR_HOST: "firebase-emulator:8080"
+      firebase-emulator:
+        condition: service_healthy
     ports:
       - "8084:8080"
-    depends_on:
-      - firebase-emulator
 
-  # Analytics Service
-  analytics-service:
+  # Gateway API - public entry & routing
+  gateway-api:
     build:
       context: .
-      dockerfile: analytics-service/Dockerfile
+      dockerfile: gateway-api/Dockerfile
     environment:
       PORT: "8080"
-      GCP_PROJECT_ID: "focusnest-dev"
-      FIRESTORE_EMULATOR_HOST: "firebase-emulator:8080"
-    ports:
-      - "8085:8080"
+      # Clerk (put these in your .env for dev)
+      CLERK_JWKS_URL: "${CLERK_JWKS_URL}"
+      CLERK_AUDIENCE: "${CLERK_AUDIENCE}"
+      CLERK_ISSUER: "${CLERK_ISSUER}"
+      # Internal service URLs
+      ACTIVITY_URL: "http://focus-service:8080"
+      USER_URL: "http://user-service:8080"
+      ANALYTICS_URL: "http://progress-service:8080"
+      CHATBOT_URL: "http://chatbot-service:8080"
     depends_on:
-      - firebase-emulator
-
-  # Webhook Service
-  webhook-service:
-    build:
-      context: .
-      dockerfile: webhook-service/Dockerfile
-    environment:
-      PORT: "8080"
-      GCP_PROJECT_ID: "focusnest-dev"
-      FIRESTORE_EMULATOR_HOST: "firebase-emulator:8080"
+      - focus-service
+      - chatbot-service
+      - progress-service
+      - user-service
     ports:
-      - "8086:8080"
-    depends_on:
-      - firebase-emulator
-
-  # Firebase Emulator for local development
-  firebase-emulator:
-    image: gcr.io/google.com/cloudsdktool/cloud-sdk:474.0.0-emulators
-    command: >-
-      gcloud beta emulators firestore start --host-port=0.0.0.0:8080
-    ports:
-      - "8088:8080"
+      - "8080:8080"
