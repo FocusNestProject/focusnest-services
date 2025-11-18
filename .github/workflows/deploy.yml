@@ -87,7 +87,9 @@ jobs:
             --no-allow-unauthenticated \
             --ingress all \
             --set-env-vars="GCP_PROJECT_ID=$PROJECT_ID" \
-            --set-env-vars="AUTH_MODE=noop"
+            --set-env-vars="AUTH_MODE=noop" \
+            --set-env-vars="GOOGLE_GENAI_USE_VERTEXAI=${{ secrets.GOOGLE_GENAI_USE_VERTEXAI }}" \
+            --set-env-vars="GOOGLE_CLOUD_LOCATION=${{ secrets.GOOGLE_CLOUD_LOCATION }}"
 
           URL=$(gcloud run services describe chatbot-service --platform managed --region $REGION --format 'value(status.url)')
           echo "url=$URL" >> $GITHUB_OUTPUT
