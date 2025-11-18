@@ -107,6 +107,11 @@ func (s *Service) generateSignedURL(ctx context.Context, objectPath string, expi
 	return url, nil
 }
 
+// GenerateSignedURL exposes signed URL generation for existing objects.
+func (s *Service) GenerateSignedURL(ctx context.Context, objectPath string, expiration time.Duration) (string, error) {
+	return s.generateSignedURL(ctx, objectPath, expiration)
+}
+
 // ImageUploadResult contains the result of an image upload
 type ImageUploadResult struct {
 	ActivityID   string `json:"activity_id"`

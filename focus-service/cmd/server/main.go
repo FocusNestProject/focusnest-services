@@ -36,6 +36,14 @@ func main() {
 	}
 	defer cleanup()
 
+	storageSvc, err := storage.NewService(ctx, cfg.Storage.Bucket)
+	if err != nil {
+		panic(fmt.Errorf("storage init error: %w", err))
+	}
+	defer func() {
+		_ = storageSvc.Close()
+	}()
+
 	clock := productivity.NewSystemClock()
 	ids := productivity.NewUUIDGenerator()
 
@@ -44,13 +52,6 @@ func main() {
 	if err != nil {
 		panic(fmt.Errorf("productivity service init error: %w", err))
 	}
-
-	// Initialize storage service
-	storageService, err := storage.NewService(ctx, "focusnest-media-470308")
-	if err != nil {
-		panic(fmt.Errorf("storage service init error: %w", err))
-	}
-	defer storageService.Close()
 
 	verifier, err := sharedauth.NewVerifier(sharedauth.Config{
 		Mode:     cfg.Auth.Mode,
@@ -67,7 +68,7 @@ func main() {
 			r.Use(sharedauth.Middleware(verifier))
 
 			// Register productivity routes
-			httpapi.RegisterRoutes(r, productivityService, storageService)
+			httpapi.RegisterRoutes(r, productivityService, storageSvc)
 		})
 	})
 

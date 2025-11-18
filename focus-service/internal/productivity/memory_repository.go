@@ -37,6 +37,21 @@ func (r *memoryRepository) Create(_ context.Context, entry Entry) error {
 	return nil
 }
 
+func (r *memoryRepository) Update(_ context.Context, entry Entry) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	userStore, ok := r.store[entry.UserID]
+	if !ok {
+		return ErrNotFound
+	}
+	if _, exists := userStore[entry.ID]; !exists {
+		return ErrNotFound
+	}
+	userStore[entry.ID] = entry
+	return nil
+}
+
 func (r *memoryRepository) GetByID(_ context.Context, userID, entryID string) (Entry, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -85,7 +100,7 @@ func (r *memoryRepository) ListByRange(_ context.Context, userID string, startIn
 				continue
 			}
 
-			anchor := entry.StartAt
+			anchor := entry.StartTime
 			if anchor.IsZero() {
 				anchor = entry.CreatedAt
 			}
@@ -98,7 +113,7 @@ func (r *memoryRepository) ListByRange(_ context.Context, userID string, startIn
 	r.mu.RUnlock()
 
 	sort.Slice(snapshot, func(i, j int) bool {
-		return snapshot[i].StartAt.After(snapshot[j].StartAt)
+		return snapshot[i].StartTime.After(snapshot[j].StartTime)
 	})
 
 	pageSize := pagination.PageSize

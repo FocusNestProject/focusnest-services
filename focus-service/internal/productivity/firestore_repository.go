@@ -29,32 +29,46 @@ func (r *firestoreRepository) userCollection(userID string) *firestore.Collectio
 
 func (r *firestoreRepository) Create(ctx context.Context, entry Entry) error {
 	data := map[string]any{
-		"category":    entry.Category,
-		"time_mode":   entry.TimeMode,
-		"description": entry.Description,
-		"mood":        entry.Mood,
-		"cycles":      entry.Cycles,
-		"elapsed_ms":  entry.ElapsedMs,
-		"start_at":    entry.StartAt,
-		"end_at":      entry.EndAt,
-		"created_at":  entry.CreatedAt,
-		"updated_at":  entry.UpdatedAt,
-		"deleted":     false,
+		"activity_name": entry.ActivityName,
+		"time_elapsed":  entry.TimeElapsed,
+		"num_cycle":     entry.NumCycle,
+		"time_mode":     entry.TimeMode,
+		"category":      entry.Category,
+		"description":   entry.Description,
+		"mood":          entry.Mood,
+		"image":         entry.Image,
+		"start_time":    entry.StartTime,
+		"end_time":      entry.EndTime,
+		"created_at":    entry.CreatedAt,
+		"updated_at":    entry.UpdatedAt,
+		"deleted":       false,
 		// anchor is the canonical sort/filter field for time-range queries
-		"anchor": entry.StartAt,
-	}
-
-	if entry.Image != nil {
-		data["image"] = map[string]any{
-			"original_url": entry.Image.OriginalURL,
-			"overview_url": entry.Image.OverviewURL,
-		}
+		"anchor": entry.StartTime,
 	}
 
 	_, err := r.userCollection(entry.UserID).Doc(entry.ID).Create(ctx, data)
 	if status.Code(err) == codes.AlreadyExists {
 		return ErrConflict
 	}
+	return err
+}
+
+func (r *firestoreRepository) Update(ctx context.Context, entry Entry) error {
+	data := map[string]any{
+		"activity_name": entry.ActivityName,
+		"time_elapsed":  entry.TimeElapsed,
+		"num_cycle":     entry.NumCycle,
+		"time_mode":     entry.TimeMode,
+		"category":      entry.Category,
+		"description":   entry.Description,
+		"mood":          entry.Mood,
+		"image":         entry.Image,
+		"start_time":    entry.StartTime,
+		"end_time":      entry.EndTime,
+		"updated_at":    entry.UpdatedAt,
+		"anchor":        entry.StartTime,
+	}
+	_, err := r.userCollection(entry.UserID).Doc(entry.ID).Set(ctx, data, firestore.MergeAll)
 	return err
 }
 
@@ -169,7 +183,7 @@ func (r *firestoreRepository) ListByRange(
 				// Since we still have 'last' from the iterator (which is the last fetched, not necessarily the last kept),
 				// safest is to fetch the anchor from the last kept entry and pair it with its docID.
 				lastKept := entries[len(entries)-1]
-				anchor := lastKept.StartAt
+				anchor := lastKept.StartTime
 				nextToken = encodePageToken(anchor, lastKept.ID)
 			} else {
 				// degenerate case; fallback to iterator's last
@@ -242,58 +256,44 @@ func (r *firestoreRepository) countAgg(ctx context.Context, base firestore.Query
 
 func snapshotToEntry(userID string, doc *firestore.DocumentSnapshot) (Entry, error) {
 	var payload struct {
-		Category    string         `firestore:"category"`
-		TimeMode    string         `firestore:"time_mode"`
-		Description string         `firestore:"description"`
-		Mood        string         `firestore:"mood"`
-		Cycles      int            `firestore:"cycles"`
-		ElapsedMs   int            `firestore:"elapsed_ms"`
-		StartAt     time.Time      `firestore:"start_at"`
-		EndAt       time.Time      `firestore:"end_at"`
-		CreatedAt   time.Time      `firestore:"created_at"`
-		UpdatedAt   time.Time      `firestore:"updated_at"`
-		DeletedAt   time.Time      `firestore:"deleted_at"`
-		Image       map[string]any `firestore:"image"`
+		ActivityName string    `firestore:"activity_name"`
+		TimeElapsed  int       `firestore:"time_elapsed"`
+		NumCycle     int       `firestore:"num_cycle"`
+		TimeMode     string    `firestore:"time_mode"`
+		Category     string    `firestore:"category"`
+		Description  string    `firestore:"description"`
+		Mood         string    `firestore:"mood"`
+		Image        string    `firestore:"image"`
+		StartTime    time.Time `firestore:"start_time"`
+		EndTime      time.Time `firestore:"end_time"`
+		CreatedAt    time.Time `firestore:"created_at"`
+		UpdatedAt    time.Time `firestore:"updated_at"`
+		DeletedAt    time.Time `firestore:"deleted_at"`
 	}
 	if err := doc.DataTo(&payload); err != nil {
 		return Entry{}, err
 	}
 
 	entry := Entry{
-		ID:          doc.Ref.ID,
-		UserID:      userID,
-		Category:    payload.Category,
-		TimeMode:    payload.TimeMode,
-		Description: payload.Description,
-		Mood:        payload.Mood,
-		Cycles:      payload.Cycles,
-		ElapsedMs:   payload.ElapsedMs,
-		StartAt:     payload.StartAt,
-		EndAt:       payload.EndAt,
-		CreatedAt:   payload.CreatedAt,
-		UpdatedAt:   payload.UpdatedAt,
+		ID:           doc.Ref.ID,
+		UserID:       userID,
+		ActivityName: payload.ActivityName,
+		TimeElapsed:  payload.TimeElapsed,
+		NumCycle:     payload.NumCycle,
+		TimeMode:     payload.TimeMode,
+		Category:     payload.Category,
+		Description:  payload.Description,
+		Mood:         payload.Mood,
+		Image:        payload.Image,
+		StartTime:    payload.StartTime,
+		EndTime:      payload.EndTime,
+		CreatedAt:    payload.CreatedAt,
+		UpdatedAt:    payload.UpdatedAt,
 	}
 
 	if !payload.DeletedAt.IsZero() {
 		entry.DeletedAt = &payload.DeletedAt
 	}
 
-	// Parse image data if present
-	if payload.Image != nil {
-		entry.Image = &ImageInfo{
-			OriginalURL: getStringFromMap(payload.Image, "original_url"),
-			OverviewURL: getStringFromMap(payload.Image, "overview_url"),
-		}
-	}
-
 	return entry, nil
-}
-
-func getStringFromMap(m map[string]any, key string) string {
-	if val, ok := m[key]; ok {
-		if str, ok := val.(string); ok {
-			return str
-		}
-	}
-	return ""
 }

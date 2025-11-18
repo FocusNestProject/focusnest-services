@@ -10,71 +10,81 @@ import (
 
 // Entry is a single productivity event captured by the user.
 type Entry struct {
-	ID          string     `json:"id"`
-	UserID      string     `json:"user_id"`
-	Category    string     `json:"category"`
-	TimeMode    string     `json:"time_mode"`
-	Description string     `json:"description,omitempty"`
-	Mood        string     `json:"mood,omitempty"`
-	Cycles      int        `json:"cycles"`
-	ElapsedMs   int        `json:"elapsed_ms"`
-	StartAt     time.Time  `json:"start_at"`
-	EndAt       time.Time  `json:"end_at"`
-	Image       *ImageInfo `json:"image,omitempty"`
-	CreatedAt   time.Time  `json:"created_at"`
-	UpdatedAt   time.Time  `json:"updated_at"`
-	DeletedAt   *time.Time `json:"-"`
-}
-
-// ImageInfo stores optional image metadata for an entry.
-type ImageInfo struct {
-	OriginalURL string `json:"original_url"`
-	OverviewURL string `json:"overview_url"`
+	ID           string     `json:"id"`
+	UserID       string     `json:"user_id"`
+	ActivityName string     `json:"activity_name"`
+	TimeElapsed  int        `json:"time_elapsed"`
+	NumCycle     int        `json:"num_cycle"`
+	TimeMode     string     `json:"time_mode"`
+	Category     string     `json:"category"`
+	Description  string     `json:"description,omitempty"`
+	Mood         string     `json:"mood,omitempty"`
+	Image        string     `json:"image,omitempty"`
+	StartTime    time.Time  `json:"start_time"`
+	EndTime      time.Time  `json:"end_time"`
+	CreatedAt    time.Time  `json:"created_at"`
+	UpdatedAt    time.Time  `json:"updated_at"`
+	DeletedAt    *time.Time `json:"-"`
 }
 
 // ValidCategories defines the allowed productivity categories.
 var ValidCategories = []string{
 	"Work",
 	"Study",
-	"Reading",
-	"Journaling",
-	"Cooking",
+	"Read",
+	"Journal",
+	"Cook",
 	"Workout",
+	"Music",
 	"Other",
 }
 
 // ValidTimeModes defines the allowed time modes.
 var ValidTimeModes = []string{
-	"Pomodoro",    // 25 min work, 5 min break
-	"QuickFocus",  // 15 min work, 5 min break
-	"FreeTimer",   // custom timer, can be stopped anytime
-	"CustomTimer", // user-defined timer
+	"Pomodoro",
+	"Deep Work",
+	"Quick Focus",
+	"Free Timer",
+	"Other",
 }
 
 // ValidMoods defines the allowed mood options.
 var ValidMoods = []string{
-	"excited",
-	"focused",
-	"calm",
-	"energetic",
-	"tired",
-	"motivated",
-	"stressed",
-	"relaxed",
+	"Fokus",
+	"Semangat",
+	"Biasa Aja",
+	"Capek",
+	"Burn Out",
+	"Mengantuk",
 }
 
 // CreateInput captures the data required to create a new entry.
 type CreateInput struct {
-	UserID      string
-	Category    string
-	TimeMode    string
-	Description string
-	Mood        string
-	Cycles      int
-	ElapsedMs   int
-	StartAt     *time.Time
-	EndAt       *time.Time
-	Image       *ImageInfo
+	UserID       string
+	ActivityName string
+	TimeElapsed  int
+	NumCycle     int
+	TimeMode     string
+	Category     string
+	Description  string
+	Mood         string
+	Image        string
+	StartTime    time.Time
+	EndTime      time.Time
+}
+
+// PatchInput captures partial updates for an entry.
+type PatchInput struct {
+	ActivityName *string
+	TimeElapsed  *int
+	NumCycle     *int
+	TimeMode     *string
+	Category     *string
+	Description  *string
+	Mood         *string
+	Image        *string
+	StartTime    *time.Time
+	EndTime      *time.Time
 }
 
 // ListInput captures query parameters for listing entries.
@@ -95,10 +105,10 @@ type MonthHistoryInput struct {
 
 // DayStatus represents the status of a single day in monthly history.
 type DayStatus struct {
-	Date           string `json:"date"`   // YYYY-MM-DD format
-	Status         string `json:"status"` // active, skipped, today, upcoming
-	TotalElapsedMs int    `json:"total_elapsed_ms"`
-	Sessions       int    `json:"sessions"`
+	Date                string `json:"date"`   // YYYY-MM-DD format
+	Status              string `json:"status"` // active, skipped, today, upcoming
+	TotalElapsedSeconds int    `json:"total_elapsed_seconds"`
+	Sessions            int    `json:"sessions"`
 }
 
 // MonthHistoryResponse represents the response for monthly history.
@@ -108,16 +118,21 @@ type MonthHistoryResponse struct {
 	Days  []DayStatus `json:"days"`
 }
 
-// ListResponse represents a paginated list response.
-type ListResponse struct {
-	Data     []Entry  `json:"data"`
-	PageInfo PageInfo `json:"pageInfo"`
+// ListItem is a lightweight projection returned by the list endpoint.
+type ListItem struct {
+	ID          string    `json:"id"`
+	Image       string    `json:"image"`
+	Category    string    `json:"category"`
+	TimeElapsed int       `json:"time_elapsed"`
+	NumCycle    int       `json:"num_cycle"`
+	TimeMode    string    `json:"time_mode"`
+	StartTime   time.Time `json:"start_time"`
 }
 
-// ImageUploadResponse represents the response for image upload.
-type ImageUploadResponse struct {
-	Success bool   `json:"success"`
-	Message string `json:"message"`
+// ListResponse represents a paginated list response.
+type ListResponse struct {
+	Items    []ListItem `json:"items"`
+	PageInfo PageInfo   `json:"pageInfo"`
 }
 
 // Validate ensures the input fields meet the domain constraints.
@@ -127,24 +142,33 @@ func (i CreateInput) Validate() error {
 	if i.UserID == "" {
 		problems = append(problems, "user_id is required")
 	}
-	if strings.TrimSpace(i.Category) == "" {
-		problems = append(problems, "category is required")
+	if strings.TrimSpace(i.ActivityName) == "" {
+		problems = append(problems, "activity_name is required")
 	}
-	if i.ElapsedMs <= 0 {
-		problems = append(problems, "elapsed_ms must be greater than 0")
+	if i.TimeElapsed <= 0 {
+		problems = append(problems, "time_elapsed must be greater than 0")
 	}
-	if i.Cycles < 0 {
-		problems = append(problems, "cycles must be non-negative")
+	if i.NumCycle <= 0 {
+		problems = append(problems, "num_cycle must be greater than 0")
 	}
-	if i.StartAt != nil && i.EndAt != nil && i.EndAt.Before(*i.StartAt) {
-		problems = append(problems, "end_at must be on or after start_at")
+	if i.StartTime.IsZero() {
+		problems = append(problems, "start_time is required")
+	}
+	if i.EndTime.IsZero() {
+		problems = append(problems, "end_time is required")
+	}
+	if !i.EndTime.IsZero() && i.EndTime.Before(i.StartTime) {
+		problems = append(problems, "end_time must be on or after start_time")
 	}
 
 	// Validate category
-	if i.Category != "" {
+	trimmedCategory := strings.TrimSpace(i.Category)
+	if trimmedCategory == "" {
+		problems = append(problems, "category is required")
+	} else {
 		validCategory := false
 		for _, cat := range ValidCategories {
-			if cat == i.Category {
+			if cat == trimmedCategory {
 				validCategory = true
 				break
 			}
@@ -155,10 +179,13 @@ func (i CreateInput) Validate() error {
 	}
 
 	// Validate time mode
-	if i.TimeMode != "" {
+	trimmedMode := strings.TrimSpace(i.TimeMode)
+	if trimmedMode == "" {
+		problems = append(problems, "time_mode is required")
+	} else {
 		validMode := false
 		for _, mode := range ValidTimeModes {
-			if mode == i.TimeMode {
+			if mode == trimmedMode {
 				validMode = true
 				break
 			}
@@ -169,10 +196,10 @@ func (i CreateInput) Validate() error {
 	}
 
 	// Validate mood
-	if i.Mood != "" {
+	if trimmed := strings.TrimSpace(i.Mood); trimmed != "" {
 		validMood := false
 		for _, mood := range ValidMoods {
-			if mood == i.Mood {
+			if mood == trimmed {
 				validMood = true
 				break
 			}
@@ -186,6 +213,58 @@ func (i CreateInput) Validate() error {
 		return errors.New(strings.Join(problems, "; "))
 	}
 	return nil
+}
+
+// Apply validates and mutates an entry using a patch input. Service layer uses this
+// to reuse validation logic.
+func (p PatchInput) Apply(e Entry) (Entry, error) {
+	if p.ActivityName != nil {
+		e.ActivityName = strings.TrimSpace(*p.ActivityName)
+	}
+	if p.TimeElapsed != nil {
+		e.TimeElapsed = *p.TimeElapsed
+	}
+	if p.NumCycle != nil {
+		e.NumCycle = *p.NumCycle
+	}
+	if p.TimeMode != nil {
+		e.TimeMode = strings.TrimSpace(*p.TimeMode)
+	}
+	if p.Category != nil {
+		e.Category = strings.TrimSpace(*p.Category)
+	}
+	if p.Description != nil {
+		e.Description = strings.TrimSpace(*p.Description)
+	}
+	if p.Mood != nil {
+		e.Mood = strings.TrimSpace(*p.Mood)
+	}
+	if p.Image != nil {
+		e.Image = strings.TrimSpace(*p.Image)
+	}
+	if p.StartTime != nil {
+		e.StartTime = p.StartTime.UTC()
+	}
+	if p.EndTime != nil {
+		e.EndTime = p.EndTime.UTC()
+	}
+	ci := CreateInput{
+		UserID:       e.UserID,
+		ActivityName: e.ActivityName,
+		TimeElapsed:  e.TimeElapsed,
+		NumCycle:     e.NumCycle,
+		TimeMode:     e.TimeMode,
+		Category:     e.Category,
+		Description:  e.Description,
+		Mood:         e.Mood,
+		Image:        e.Image,
+		StartTime:    e.StartTime,
+		EndTime:      e.EndTime,
+	}
+	if err := ci.Validate(); err != nil {
+		return Entry{}, err
+	}
+	return e, nil
 }
 
 // Pagination describes cursor-based paging preferences for list queries.
@@ -223,6 +302,7 @@ type PageInfo struct {
 type Repository interface {
 	Create(ctx context.Context, entry Entry) error
 	GetByID(ctx context.Context, userID, entryID string) (Entry, error)
+	Update(ctx context.Context, entry Entry) error
 	Delete(ctx context.Context, userID, entryID string, deletedAt time.Time) error
 	ListByRange(ctx context.Context, userID string, startInclusive, endExclusive time.Time, pagination Pagination) ([]Entry, PageInfo, error)
 }
@@ -277,29 +357,21 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (Entry, error) 
 	}
 
 	now := s.clock.Now().UTC()
-	startAt := now
-	if input.StartAt != nil {
-		startAt = input.StartAt.UTC()
-	}
-	endAt := startAt.Add(time.Duration(input.ElapsedMs) * time.Millisecond)
-	if input.EndAt != nil {
-		endAt = input.EndAt.UTC()
-	}
-
 	entry := Entry{
-		ID:          s.ids.NewID(),
-		UserID:      input.UserID,
-		Category:    strings.TrimSpace(input.Category),
-		TimeMode:    strings.TrimSpace(input.TimeMode),
-		Description: strings.TrimSpace(input.Description),
-		Mood:        strings.TrimSpace(input.Mood),
-		Cycles:      input.Cycles,
-		ElapsedMs:   input.ElapsedMs,
-		StartAt:     startAt,
-		EndAt:       endAt,
-		Image:       input.Image,
-		CreatedAt:   now,
-		UpdatedAt:   now,
+		ID:           s.ids.NewID(),
+		UserID:       input.UserID,
+		ActivityName: strings.TrimSpace(input.ActivityName),
+		TimeElapsed:  input.TimeElapsed,
+		NumCycle:     input.NumCycle,
+		TimeMode:     strings.TrimSpace(input.TimeMode),
+		Category:     strings.TrimSpace(input.Category),
+		Description:  strings.TrimSpace(input.Description),
+		Mood:         strings.TrimSpace(input.Mood),
+		Image:        strings.TrimSpace(input.Image),
+		StartTime:    input.StartTime.UTC(),
+		EndTime:      input.EndTime.UTC(),
+		CreatedAt:    now,
+		UpdatedAt:    now,
 	}
 
 	if err := s.repo.Create(ctx, entry); err != nil {
@@ -307,6 +379,26 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (Entry, error) 
 	}
 
 	return entry, nil
+}
+
+// Update applies partial modifications to an existing productivity entry.
+func (s *Service) Update(ctx context.Context, userID, entryID string, patch PatchInput) (Entry, error) {
+	if userID == "" || entryID == "" {
+		return Entry{}, ErrNotFound
+	}
+	current, err := s.repo.GetByID(ctx, userID, entryID)
+	if err != nil {
+		return Entry{}, err
+	}
+	updated, err := patch.Apply(current)
+	if err != nil {
+		return Entry{}, fmt.Errorf("%w: %s", ErrInvalidInput, err.Error())
+	}
+	updated.UpdatedAt = s.clock.Now().UTC()
+	if err := s.repo.Update(ctx, updated); err != nil {
+		return Entry{}, err
+	}
+	return updated, nil
 }
 
 // Get retrieves a single productivity entry by its ID for the provided user.
@@ -374,8 +466,21 @@ func (s *Service) List(ctx context.Context, input ListInput) (ListResponse, erro
 		return ListResponse{}, err
 	}
 
+	items := make([]ListItem, 0, len(entries))
+	for _, e := range entries {
+		items = append(items, ListItem{
+			ID:          e.ID,
+			Image:       e.Image,
+			Category:    e.Category,
+			TimeElapsed: e.TimeElapsed,
+			NumCycle:    e.NumCycle,
+			TimeMode:    e.TimeMode,
+			StartTime:   e.StartTime,
+		})
+	}
+
 	return ListResponse{
-		Data:     entries,
+		Items:    items,
 		PageInfo: pageInfo,
 	}, nil
 }
@@ -421,18 +526,18 @@ func (s *Service) GetMonthHistory(ctx context.Context, input MonthHistoryInput) 
 		}
 
 		dayMap[dateStr] = &DayStatus{
-			Date:           dateStr,
-			Status:         status,
-			TotalElapsedMs: 0,
-			Sessions:       0,
+			Date:                dateStr,
+			Status:              status,
+			TotalElapsedSeconds: 0,
+			Sessions:            0,
 		}
 	}
 
 	// Aggregate entries by day
 	for _, entry := range entries {
-		dayStr := entry.StartAt.Format("2006-01-02")
+		dayStr := entry.StartTime.Format("2006-01-02")
 		if dayStatus, exists := dayMap[dayStr]; exists {
-			dayStatus.TotalElapsedMs += entry.ElapsedMs
+			dayStatus.TotalElapsedSeconds += entry.TimeElapsed
 			dayStatus.Sessions++
 		}
 	}
@@ -451,43 +556,5 @@ func (s *Service) GetMonthHistory(ctx context.Context, input MonthHistoryInput) 
 		Month: input.Month,
 		Year:  input.Year,
 		Days:  days,
-	}, nil
-}
-
-// UploadImage handles image upload for an existing entry.
-func (s *Service) UploadImage(ctx context.Context, userID, entryID string, imageData []byte, filename string) (ImageUploadResponse, error) {
-	if userID == "" || entryID == "" {
-		return ImageUploadResponse{}, ErrNotFound
-	}
-
-	// Verify entry exists
-	_, err := s.repo.GetByID(ctx, userID, entryID)
-	if err != nil {
-		return ImageUploadResponse{}, err
-	}
-
-	// Image upload is handled by the storage service
-	return ImageUploadResponse{
-		Success: true,
-		Message: "Image uploaded, overview generation queued.",
-	}, nil
-}
-
-// RetryImageOverview triggers overview regeneration for an entry.
-func (s *Service) RetryImageOverview(ctx context.Context, userID, entryID string) (ImageUploadResponse, error) {
-	if userID == "" || entryID == "" {
-		return ImageUploadResponse{}, ErrNotFound
-	}
-
-	// Verify entry exists
-	_, err := s.repo.GetByID(ctx, userID, entryID)
-	if err != nil {
-		return ImageUploadResponse{}, err
-	}
-
-	// Overview generation will be triggered by the media worker service
-	return ImageUploadResponse{
-		Success: true,
-		Message: "Overview generation re-triggered.",
 	}, nil
 }

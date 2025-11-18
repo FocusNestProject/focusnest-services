@@ -15,6 +15,7 @@ type Config struct {
 	DataStore    DataStore
 	Auth         AuthConfig
 	Firestore    FirestoreConfig
+	Storage      StorageConfig
 }
 
 // DataStore enumerates supported persistence backends.
@@ -40,6 +41,11 @@ type FirestoreConfig struct {
 	EmulatorHost string
 }
 
+// StorageConfig contains Cloud Storage settings.
+type StorageConfig struct {
+	Bucket string
+}
+
 // Load reads environment variables into Config with validation.
 func Load() (Config, error) {
 	cfg := Config{
@@ -53,6 +59,9 @@ func Load() (Config, error) {
 		},
 		Firestore: FirestoreConfig{
 			EmulatorHost: envconfig.Get("FIRESTORE_EMULATOR_HOST", ""),
+		},
+		Storage: StorageConfig{
+			Bucket: envconfig.Get("FOCUS_STORAGE_BUCKET", ""),
 		},
 	}
 
@@ -77,6 +86,10 @@ func validate(cfg Config) error {
 		}
 	default:
 		return fmt.Errorf("unsupported datastore: %s", cfg.DataStore)
+	}
+
+	if strings.TrimSpace(cfg.Storage.Bucket) == "" {
+		return fmt.Errorf("FOCUS_STORAGE_BUCKET is required")
 	}
 
 	switch cfg.Auth.Mode {
