@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"time"
 
@@ -13,11 +14,10 @@ import (
 )
 
 const (
-	serviceTimeout  = 8 * time.Second
-	defaultDaysBack = 30
-	minYear         = 1970
-	maxYear         = 2100
-	dateLayout      = "2006-01-02"
+	serviceTimeout = 8 * time.Second
+	minYear        = 1970
+	maxYear        = 2100
+	dateLayout     = "2006-01-02"
 )
 
 // RegisterRoutes defines all /v1/progress routes
@@ -25,21 +25,18 @@ func RegisterRoutes(r chi.Router, service progress.Service) {
 	r.Route("/v1/progress", func(r chi.Router) {
 		r.Use(middleware.Recoverer)
 
-		// Summary: last 30 days
-		r.Get("/", getProgress(service))
+		r.Get("/summary", getSummary(service))
 
-		// Streaks
-		r.Route("/streaks", func(r chi.Router) {
-			r.Get("/month", getMonthlyStreak(service))
-			r.Get("/week", getWeeklyStreak(service))
+		r.Route("/streak", func(r chi.Router) {
+			r.Get("/monthly", getMonthlyStreak(service))
+			r.Get("/weekly", getWeeklyStreak(service))
 			r.Get("/current", getCurrentStreak(service))
 		})
 	})
 }
 
-// GET /v1/progress
-// Returns summary stats for the last 30 days
-func getProgress(service progress.Service) http.HandlerFunc {
+// GET /v1/progress/summary
+func getSummary(service progress.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		userID := headerUserID(r)
 		if userID == "" {
@@ -47,24 +44,41 @@ func getProgress(service progress.Service) http.HandlerFunc {
 			return
 		}
 
-		end := time.Now().UTC()
-		start := end.AddDate(0, 0, -defaultDaysBack)
+		rangeParam := r.URL.Query().Get("range")
+		if rangeParam == "" {
+			rangeParam = string(progress.SummaryRangeWeek)
+		}
+		category := r.URL.Query().Get("category")
+		var reference time.Time
+		if raw := r.URL.Query().Get("reference_date"); raw != "" {
+			t, err := time.Parse(dateLayout, raw)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, "invalid reference_date, use YYYY-MM-DD")
+				return
+			}
+			reference = t
+		}
 
 		ctx, cancel := context.WithTimeout(r.Context(), serviceTimeout)
 		defer cancel()
 
-		stats, err := service.GetProgress(ctx, userID, start, end)
+		resp, err := service.GetSummary(ctx, userID, progress.SummaryInput{
+			Range:         progress.SummaryRange(rangeParam),
+			Category:      category,
+			ReferenceDate: reference,
+		})
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "internal server error")
+			status := http.StatusInternalServerError
+			message := "internal server error"
+			if errors.Is(err, progress.ErrInvalidSummaryRange) || errors.Is(err, progress.ErrMissingUserID) {
+				status = http.StatusBadRequest
+				message = err.Error()
+			}
+			writeError(w, status, message)
 			return
 		}
 
-		writeJSON(w, http.StatusOK, map[string]any{
-			"total_time":     stats.TotalTime,
-			"total_sessions": stats.TotalSessions,
-			"categories":     stats.Categories,
-			"periods":        stats.Periods,
-		})
+		writeJSON(w, http.StatusOK, resp)
 	}
 }
 

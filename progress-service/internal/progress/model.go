@@ -33,6 +33,50 @@ type StreakData struct {
 	Days          []DayStatus `json:"days"`
 }
 
+// SummaryRange represents the supported summary windows.
+type SummaryRange string
+
+const (
+	SummaryRangeWeek    SummaryRange = "week"
+	SummaryRangeMonth   SummaryRange = "month"
+	SummaryRangeQuarter SummaryRange = "3months"
+	SummaryRangeYear    SummaryRange = "year"
+)
+
+// SummaryInput captures query parameters for the summary endpoint.
+type SummaryInput struct {
+	Range         SummaryRange
+	Category      string
+	ReferenceDate time.Time
+}
+
+// SummaryBucket represents a distribution bucket.
+type SummaryBucket struct {
+	Label       string `json:"label"`
+	TimeElapsed int    `json:"time_elapsed"`
+}
+
+// SummaryResponse is returned by the summary endpoint.
+type SummaryResponse struct {
+	Range                   SummaryRange    `json:"range"`
+	ReferenceDate           time.Time       `json:"reference_date"`
+	Category                string          `json:"category,omitempty"`
+	TotalFilteredTime       int             `json:"total_filtered_time"`
+	TimeDistribution        []SummaryBucket `json:"time_distribution"`
+	TotalSessions           int             `json:"total_sessions"`
+	TotalTimeFrame          int             `json:"total_time_frame"`
+	MostProductiveHourStart *time.Time      `json:"most_productive_hour_start"`
+	MostProductiveHourEnd   *time.Time      `json:"most_productive_hour_end"`
+}
+
+// ProductivityEntry represents a raw productivity session used for analytics.
+type ProductivityEntry struct {
+	StartTime   time.Time
+	EndTime     time.Time
+	TimeElapsed int
+	Category    string
+}
+
 // MonthlyStreakData represents monthly streak data
 type MonthlyStreakData struct {
 	Month         int         `json:"month"`
@@ -61,6 +105,7 @@ type DayStatus struct {
 type Repository interface {
 	GetDailySummaries(ctx context.Context, userID string, startDate, endDate time.Time) ([]*DailySummary, error)
 	GetProgressStats(ctx context.Context, userID string, startDate, endDate time.Time) (*ProgressStats, error)
+	ListProductivities(ctx context.Context, userID string, startDate, endDate time.Time) ([]ProductivityEntry, error)
 }
 
 // Service defines the progress service interface
@@ -69,4 +114,5 @@ type Service interface {
 	GetMonthlyStreak(ctx context.Context, userID string, month, year int) (*MonthlyStreakData, error)
 	GetWeeklyStreak(ctx context.Context, userID string, targetDate time.Time) (*WeeklyStreakData, error)
 	GetCurrentStreak(ctx context.Context, userID string) (*StreakData, error)
+	GetSummary(ctx context.Context, userID string, input SummaryInput) (*SummaryResponse, error)
 }

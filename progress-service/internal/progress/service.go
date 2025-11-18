@@ -3,6 +3,7 @@ package progress
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -30,6 +31,58 @@ func NewServiceWithLocation(repo Repository, loc *time.Location) Service {
 
 func (s *service) GetProgress(ctx context.Context, userID string, startDate, endDate time.Time) (*ProgressStats, error) {
 	return s.repo.GetProgressStats(ctx, userID, startDate, endDate)
+}
+
+func (s *service) GetSummary(ctx context.Context, userID string, input SummaryInput) (*SummaryResponse, error) {
+	if strings.TrimSpace(userID) == "" {
+		return nil, ErrMissingUserID
+	}
+	rng := input.Range
+	if rng == "" {
+		rng = SummaryRangeWeek
+	}
+	ref := input.ReferenceDate
+	if ref.IsZero() {
+		ref = time.Now().In(s.loc)
+	} else {
+		ref = ref.In(s.loc)
+	}
+	startLocal, endLocal, err := s.summaryBounds(rng, ref)
+	if err != nil {
+		return nil, err
+	}
+	entries, err := s.repo.ListProductivities(ctx, userID, startLocal.UTC(), endLocal.UTC())
+	if err != nil {
+		return nil, fmt.Errorf("failed to list productivities: %w", err)
+	}
+	category := strings.TrimSpace(input.Category)
+	var (
+		totalFrame    int
+		totalFiltered int
+		totalSessions int
+		filtered      []ProductivityEntry
+	)
+	for _, entry := range entries {
+		totalFrame += entry.TimeElapsed
+		if category == "" || strings.EqualFold(entry.Category, category) {
+			totalFiltered += entry.TimeElapsed
+			totalSessions++
+			filtered = append(filtered, entry)
+		}
+	}
+	distribution := s.buildDistribution(rng, startLocal, ref, filtered)
+	prodStart, prodEnd := s.calculateMostProductiveHour(filtered, ref)
+	return &SummaryResponse{
+		Range:                   rng,
+		ReferenceDate:           ref,
+		Category:                category,
+		TotalFilteredTime:       totalFiltered,
+		TimeDistribution:        distribution,
+		TotalSessions:           totalSessions,
+		TotalTimeFrame:          totalFrame,
+		MostProductiveHourStart: prodStart,
+		MostProductiveHourEnd:   prodEnd,
+	}, nil
 }
 
 // GetMonthlyStreak returns monthly streak data
@@ -64,7 +117,7 @@ func (s *service) GetMonthlyStreak(ctx context.Context, userID string, month, ye
 		if d.After(truncateToDay(now)) {
 			status = "upcoming"
 		} else if dayMap[dayStr] {
-			status = "active"
+			status = "done"
 		} else {
 			status = "skipped"
 		}
@@ -119,7 +172,7 @@ func (s *service) GetWeeklyStreak(ctx context.Context, userID string, targetDate
 		if d.After(truncateToDay(now)) {
 			status = "upcoming"
 		} else if dayMap[dayStr] {
-			status = "active"
+			status = "done"
 		} else {
 			status = "skipped"
 		}
@@ -172,7 +225,7 @@ func (s *service) GetCurrentStreak(ctx context.Context, userID string) (*StreakD
 		if d.After(truncateToDay(now)) {
 			status = "upcoming"
 		} else if dayMap[dayStr] {
-			status = "active"
+			status = "done"
 		} else {
 			status = "skipped"
 		}
@@ -196,11 +249,11 @@ func (s *service) GetCurrentStreak(ctx context.Context, userID string) (*StreakD
 
 // calculateStreaks calculates total (longest) and current streaks from day statuses
 func (s *service) calculateStreaks(days []DayStatus, now time.Time) (totalStreak, currentStreak int) {
-	// Longest consecutive "active"
+	// Longest consecutive "done"
 	maxStreak := 0
 	run := 0
 	for _, day := range days {
-		if day.Status == "active" {
+		if day.Status == "done" {
 			run++
 			if run > maxStreak {
 				maxStreak = run
@@ -222,7 +275,7 @@ func (s *service) calculateStreaks(days []DayStatus, now time.Time) (totalStreak
 		if dayDate.After(today) {
 			continue
 		}
-		if day.Status == "active" {
+		if day.Status == "done" {
 			run++
 		} else {
 			break
@@ -230,6 +283,167 @@ func (s *service) calculateStreaks(days []DayStatus, now time.Time) (totalStreak
 	}
 	currentStreak = run
 	return
+}
+
+func (s *service) summaryBounds(rng SummaryRange, ref time.Time) (time.Time, time.Time, error) {
+	refDay := truncateToDay(ref)
+	switch rng {
+	case SummaryRangeWeek:
+		start := refDay
+		for start.Weekday() != time.Monday {
+			start = start.AddDate(0, 0, -1)
+		}
+		return start, start.AddDate(0, 0, 7), nil
+	case SummaryRangeMonth:
+		start := time.Date(ref.Year(), ref.Month(), 1, 0, 0, 0, 0, ref.Location())
+		return start, start.AddDate(0, 1, 0), nil
+	case SummaryRangeQuarter:
+		monthStart := time.Date(ref.Year(), ref.Month(), 1, 0, 0, 0, 0, ref.Location())
+		start := monthStart.AddDate(0, -2, 0)
+		return start, monthStart.AddDate(0, 1, 0), nil
+	case SummaryRangeYear:
+		start := time.Date(ref.Year(), time.January, 1, 0, 0, 0, 0, ref.Location())
+		return start, start.AddDate(1, 0, 0), nil
+	default:
+		return time.Time{}, time.Time{}, ErrInvalidSummaryRange
+	}
+}
+
+func (s *service) buildDistribution(rng SummaryRange, start, ref time.Time, entries []ProductivityEntry) []SummaryBucket {
+	switch rng {
+	case SummaryRangeWeek:
+		return s.buildWeekDistribution(start, entries)
+	case SummaryRangeMonth:
+		return s.buildMonthDistribution(entries)
+	case SummaryRangeQuarter:
+		return s.buildQuarterDistribution(ref, entries)
+	case SummaryRangeYear:
+		return s.buildYearDistribution(entries)
+	default:
+		return nil
+	}
+}
+
+func (s *service) buildWeekDistribution(start time.Time, entries []ProductivityEntry) []SummaryBucket {
+	labels := []string{"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"}
+	buckets := make([]SummaryBucket, len(labels))
+	for i, label := range labels {
+		buckets[i] = SummaryBucket{Label: label}
+	}
+	for _, entry := range entries {
+		day := truncateToDay(entry.StartTime.In(s.loc))
+		delta := int(day.Sub(start).Hours() / 24)
+		if delta < 0 || delta >= len(buckets) {
+			continue
+		}
+		buckets[delta].TimeElapsed += entry.TimeElapsed
+	}
+	return buckets
+}
+
+func (s *service) buildMonthDistribution(entries []ProductivityEntry) []SummaryBucket {
+	labels := []string{"Week1", "Week2", "Week3", "Week4"}
+	buckets := make([]SummaryBucket, len(labels))
+	for i, label := range labels {
+		buckets[i] = SummaryBucket{Label: label}
+	}
+	for _, entry := range entries {
+		day := entry.StartTime.In(s.loc).Day()
+		idx := (day - 1) / 7
+		if idx < 0 {
+			idx = 0
+		}
+		if idx >= len(buckets) {
+			idx = len(buckets) - 1
+		}
+		buckets[idx].TimeElapsed += entry.TimeElapsed
+	}
+	return buckets
+}
+
+func (s *service) buildQuarterDistribution(ref time.Time, entries []ProductivityEntry) []SummaryBucket {
+	start := time.Date(ref.Year(), ref.Month(), 1, 0, 0, 0, 0, ref.Location()).AddDate(0, -2, 0)
+	buckets := []SummaryBucket{{Label: "Month1"}, {Label: "Month2"}, {Label: "Month3"}}
+	for _, entry := range entries {
+		months := monthsBetween(start, entry.StartTime.In(s.loc))
+		if months < 0 || months >= len(buckets) {
+			continue
+		}
+		buckets[months].TimeElapsed += entry.TimeElapsed
+	}
+	return buckets
+}
+
+func (s *service) buildYearDistribution(entries []ProductivityEntry) []SummaryBucket {
+	buckets := []SummaryBucket{{Label: "Q1"}, {Label: "Q2"}, {Label: "Q3"}, {Label: "Q4"}}
+	for _, entry := range entries {
+		month := int(entry.StartTime.In(s.loc).Month())
+		idx := (month - 1) / 3
+		if idx < 0 || idx >= len(buckets) {
+			continue
+		}
+		buckets[idx].TimeElapsed += entry.TimeElapsed
+	}
+	return buckets
+}
+
+func monthsBetween(start, t time.Time) int {
+	startYear, startMonth, _ := start.Date()
+	tYear, tMonth, _ := t.Date()
+	return (tYear-startYear)*12 + int(tMonth-startMonth)
+}
+
+func (s *service) calculateMostProductiveHour(entries []ProductivityEntry, reference time.Time) (*time.Time, *time.Time) {
+	if len(entries) == 0 {
+		return nil, nil
+	}
+	totals := make(map[time.Time]int)
+	for _, entry := range entries {
+		start := entry.StartTime.In(s.loc)
+		end := entry.EndTime.In(s.loc)
+		if end.IsZero() || !end.After(start) {
+			if entry.TimeElapsed > 0 {
+				end = start.Add(time.Duration(entry.TimeElapsed) * time.Second)
+			} else {
+				continue
+			}
+		}
+		current := start
+		for current.Before(end) {
+			hourStart := time.Date(current.Year(), current.Month(), current.Day(), current.Hour(), 0, 0, 0, s.loc)
+			hourEnd := hourStart.Add(time.Hour)
+			if hourEnd.After(end) {
+				hourEnd = end
+			}
+			segment := int(hourEnd.Sub(current).Minutes())
+			if segment <= 0 && hourEnd.After(current) {
+				segment = 1
+			}
+			totals[hourStart] += segment
+			current = hourEnd
+		}
+	}
+	if len(totals) == 0 {
+		return nil, nil
+	}
+	var (
+		bestStart time.Time
+		bestValue int
+		found     bool
+	)
+	for hourStart, total := range totals {
+		if !found || total > bestValue || (total == bestValue && hourStart.Before(bestStart)) {
+			bestStart = hourStart
+			bestValue = total
+			found = true
+		}
+	}
+	if !found {
+		return nil, nil
+	}
+	startUTC := bestStart.UTC()
+	endUTC := bestStart.Add(time.Hour).UTC()
+	return &startUTC, &endUTC
 }
 
 func truncateToDay(t time.Time) time.Time {
