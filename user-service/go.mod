@@ -6,6 +6,7 @@ require (
 	cloud.google.com/go/firestore v1.18.0
 	github.com/focusnest/shared-libs v0.0.0
 	github.com/go-chi/chi/v5 v5.0.10
+	golang.org/x/sync v0.17.0
 )
 
 require (

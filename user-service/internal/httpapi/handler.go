@@ -1,8 +1,12 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -10,77 +14,151 @@ import (
 	"github.com/focusnest/user-service/internal/user"
 )
 
+const (
+	serviceTimeout    = 8 * time.Second
+	dateLayout        = "2006-01-02"
+	maxPatchBodyBytes = 64 * 1024 // 64KB of JSON is more than enough for profile updates
+)
+
 // RegisterRoutes registers all user routes
 func RegisterRoutes(r chi.Router, service user.Service) {
-	r.Route("/v1/me", func(r chi.Router) {
-		r.Use(middleware.Logger)
+	r.Route("/v1/users", func(r chi.Router) {
 		r.Use(middleware.Recoverer)
 
-		r.Get("/", getProfile(service))
-		r.Patch("/", updateProfile(service))
-		r.Get("/streaks", getStreaks(service))
+		r.Get("/me", getProfile(service))
+		r.Patch("/me", updateProfile(service))
 	})
 }
 
 func getProfile(service user.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		userID := r.Header.Get("x-user-id")
+		userID := headerUserID(r)
 		if userID == "" {
-			http.Error(w, "user ID required", http.StatusBadRequest)
+			writeError(w, http.StatusUnauthorized, "missing user ID")
 			return
 		}
 
-		profile, err := service.GetProfile(userID)
+		ctx, cancel := context.WithTimeout(r.Context(), serviceTimeout)
+		defer cancel()
+
+		profile, err := service.GetProfile(ctx, userID)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			writeError(w, http.StatusInternalServerError, "failed to load profile")
 			return
 		}
 
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(profile)
+		writeJSON(w, http.StatusOK, profile)
 	}
 }
 
 func updateProfile(service user.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		userID := r.Header.Get("x-user-id")
+		userID := headerUserID(r)
 		if userID == "" {
-			http.Error(w, "user ID required", http.StatusBadRequest)
+			writeError(w, http.StatusUnauthorized, "missing user ID")
 			return
 		}
 
-		var updates map[string]interface{}
-		if err := json.NewDecoder(r.Body).Decode(&updates); err != nil {
-			http.Error(w, "invalid request body", http.StatusBadRequest)
-			return
-		}
+		r.Body = http.MaxBytesReader(w, r.Body, maxPatchBodyBytes)
+		defer r.Body.Close()
 
-		profile, err := service.UpdateProfile(userID, updates)
+		payload, err := decodePatchPayload(r)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			var maxErr *http.MaxBytesError
+			switch {
+			case errors.Is(err, errInvalidPayload):
+				writeError(w, http.StatusBadRequest, errInvalidPayload.Error())
+			case errors.As(err, &maxErr):
+				writeError(w, http.StatusRequestEntityTooLarge, "payload too large")
+			default:
+				writeError(w, http.StatusInternalServerError, "failed to decode profile update")
+			}
 			return
 		}
 
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(profile)
+		ctx, cancel := context.WithTimeout(r.Context(), serviceTimeout)
+		defer cancel()
+
+		profile, err := service.UpdateProfile(ctx, userID, payload)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to update profile")
+			return
+		}
+
+		writeJSON(w, http.StatusOK, profile)
 	}
 }
 
-func getStreaks(service user.Service) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		userID := r.Header.Get("x-user-id")
-		if userID == "" {
-			http.Error(w, "user ID required", http.StatusBadRequest)
-			return
-		}
+var errInvalidPayload = errors.New("invalid request body")
 
-		streaks, err := service.GetStreaks(userID)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
+func decodePatchPayload(r *http.Request) (user.ProfileUpdateInput, error) {
+	var (
+		input user.ProfileUpdateInput
+		body  struct {
+			FullName  *string          `json:"full_name"`
+			Username  *string          `json:"username"`
+			Bio       *string          `json:"bio"`
+			Birthdate *json.RawMessage `json:"birthdate"`
 		}
+	)
 
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(streaks)
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			return input, err
+		}
+		return input, errInvalidPayload
 	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return input, errInvalidPayload
+	}
+	if body.FullName == nil && body.Username == nil && body.Bio == nil && body.Birthdate == nil {
+		return input, errInvalidPayload
+	}
+
+	input.FullName = body.FullName
+	input.Username = body.Username
+	input.Bio = body.Bio
+
+	if body.Birthdate != nil {
+		patch := &user.BirthdatePatch{IsSet: true}
+		if string(*body.Birthdate) != "null" {
+			var raw string
+			if err := json.Unmarshal(*body.Birthdate, &raw); err != nil {
+				return input, errInvalidPayload
+			}
+			t, err := time.Parse(dateLayout, raw)
+			if err != nil {
+				return input, errInvalidPayload
+			}
+			patch.Value = ptrTime(t)
+		}
+		input.Birthdate = patch
+	}
+
+	return input, nil
+}
+
+func ptrTime(t time.Time) *time.Time {
+	tCopy := t
+	return &tCopy
+}
+
+func headerUserID(r *http.Request) string {
+	if v := r.Header.Get("X-User-ID"); v != "" {
+		return v
+	}
+	return r.Header.Get("x-user-id")
+}
+
+func writeJSON(w http.ResponseWriter, status int, payload any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(payload)
+}
+
+func writeError(w http.ResponseWriter, status int, message string) {
+	writeJSON(w, status, map[string]string{"error": message})
 }

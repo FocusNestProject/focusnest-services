@@ -1,46 +1,63 @@
 package user
 
 import (
+	"context"
 	"time"
 )
 
-// UserProfile represents a user profile
-type UserProfile struct {
-	ID        string    `json:"id" firestore:"id"`
-	UserID    string    `json:"user_id" firestore:"user_id"`
-	Email     string    `json:"email" firestore:"email"`
-	Name      string    `json:"name" firestore:"name"`
-	Avatar    string    `json:"avatar" firestore:"avatar"`
-	CreatedAt time.Time `json:"created_at" firestore:"created_at"`
-	UpdatedAt time.Time `json:"updated_at" firestore:"updated_at"`
+// Profile represents the persisted profile document stored in Firestore.
+type Profile struct {
+	UserID    string     `json:"user_id" firestore:"user_id"`
+	FullName  string     `json:"full_name" firestore:"full_name"`
+	Username  string     `json:"username" firestore:"username"`
+	Bio       string     `json:"bio" firestore:"bio"`
+	Birthdate *time.Time `json:"birthdate" firestore:"birthdate"`
+	CreatedAt time.Time  `json:"created_at" firestore:"created_at"`
+	UpdatedAt time.Time  `json:"updated_at" firestore:"updated_at"`
 }
 
-// UserStats represents user statistics
-type UserStats struct {
-	TotalSessions int `json:"total_sessions"`
-	TotalTime     int `json:"total_time"` // in minutes
-	Streak        int `json:"streak"`
+// ProfileMetadata captures derived counters that accompany a profile response.
+type ProfileMetadata struct {
+	LongestStreak       int `json:"longest_streak"`
+	TotalProductivities int `json:"total_productivities"`
+	TotalSessions       int `json:"total_sessions"`
 }
 
-// UserStreaks represents user streak information
-type UserStreaks struct {
-	CurrentStreak int       `json:"current_streak"`
-	LongestStreak int       `json:"longest_streak"`
-	LastActivity  time.Time `json:"last_activity"`
+// ProfileResponse combines persisted profile fields with derived metadata.
+type ProfileResponse struct {
+	UserID    string          `json:"user_id"`
+	FullName  string          `json:"full_name"`
+	Username  string          `json:"username"`
+	Bio       string          `json:"bio"`
+	Birthdate *time.Time      `json:"birthdate"`
+	Metadata  ProfileMetadata `json:"metadata"`
+	CreatedAt time.Time       `json:"created_at,omitempty"`
+	UpdatedAt time.Time       `json:"updated_at,omitempty"`
 }
 
-// Repository defines the interface for user data access
+// ProfileUpdateInput describes the allowed fields during a PATCH request.
+type ProfileUpdateInput struct {
+	FullName  *string
+	Username  *string
+	Bio       *string
+	Birthdate *BirthdatePatch
+}
+
+// BirthdatePatch differentiates between omitted and explicit null updates.
+type BirthdatePatch struct {
+	IsSet bool
+	Value *time.Time
+}
+
+// Repository defines the interface for user data access.
 type Repository interface {
-	GetProfile(userID string) (*UserProfile, error)
-	UpdateProfile(profile *UserProfile) error
-	GetStats(userID string) (*UserStats, error)
-	GetStreaks(userID string) (*UserStreaks, error)
+	GetProfile(ctx context.Context, userID string) (*Profile, error)
+	UpsertProfile(ctx context.Context, userID string, updates ProfileUpdateInput) (*Profile, error)
+	GetProfileMetadata(ctx context.Context, userID string) (ProfileMetadata, error)
 }
 
-// Service defines the user service interface
+// Service defines the user service interface.
 type Service interface {
-	GetProfile(userID string) (*UserProfile, error)
-	UpdateProfile(userID string, updates map[string]interface{}) (*UserProfile, error)
-	GetStats(userID string) (*UserStats, error)
-	GetStreaks(userID string) (*UserStreaks, error)
+	GetProfile(ctx context.Context, userID string) (*ProfileResponse, error)
+	UpdateProfile(ctx context.Context, userID string, updates ProfileUpdateInput) (*ProfileResponse, error)
 }

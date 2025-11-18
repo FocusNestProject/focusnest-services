@@ -1,8 +1,10 @@
 package user
 
 import (
-	"fmt"
-	"time"
+	"context"
+	"errors"
+
+	"golang.org/x/sync/errgroup"
 )
 
 type service struct {
@@ -14,40 +16,89 @@ func NewService(repo Repository) Service {
 	return &service{repo: repo}
 }
 
-func (s *service) GetProfile(userID string) (*UserProfile, error) {
-	return s.repo.GetProfile(userID)
+func (s *service) GetProfile(ctx context.Context, userID string) (*ProfileResponse, error) {
+	var (
+		profile  *Profile
+		metadata ProfileMetadata
+	)
+
+	g, ctx := errgroup.WithContext(ctx)
+
+	g.Go(func() error {
+		p, err := s.repo.GetProfile(ctx, userID)
+		if errors.Is(err, ErrProfileNotFound) {
+			profile = defaultProfile(userID)
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		profile = p
+		return nil
+	})
+
+	g.Go(func() error {
+		m, err := s.repo.GetProfileMetadata(ctx, userID)
+		if err != nil {
+			return err
+		}
+		metadata = m
+		return nil
+	})
+
+	if err := g.Wait(); err != nil {
+		return nil, err
+	}
+
+	return buildProfileResponse(profile, metadata), nil
 }
 
-func (s *service) UpdateProfile(userID string, updates map[string]interface{}) (*UserProfile, error) {
-	profile, err := s.repo.GetProfile(userID)
-	if err != nil {
-		return nil, fmt.Errorf("get profile: %w", err)
+func (s *service) UpdateProfile(ctx context.Context, userID string, updates ProfileUpdateInput) (*ProfileResponse, error) {
+	var (
+		updated  *Profile
+		metadata ProfileMetadata
+	)
+
+	g, ctx := errgroup.WithContext(ctx)
+
+	g.Go(func() error {
+		p, err := s.repo.UpsertProfile(ctx, userID, updates)
+		if err != nil {
+			return err
+		}
+		updated = p
+		return nil
+	})
+
+	g.Go(func() error {
+		m, err := s.repo.GetProfileMetadata(ctx, userID)
+		if err != nil {
+			return err
+		}
+		metadata = m
+		return nil
+	})
+
+	if err := g.Wait(); err != nil {
+		return nil, err
 	}
 
-	// Apply updates
-	if name, ok := updates["name"].(string); ok {
-		profile.Name = name
-	}
-	if email, ok := updates["email"].(string); ok {
-		profile.Email = email
-	}
-	if avatar, ok := updates["avatar"].(string); ok {
-		profile.Avatar = avatar
-	}
-
-	profile.UpdatedAt = time.Now()
-
-	if err := s.repo.UpdateProfile(profile); err != nil {
-		return nil, fmt.Errorf("update profile: %w", err)
-	}
-
-	return profile, nil
+	return buildProfileResponse(updated, metadata), nil
 }
 
-func (s *service) GetStats(userID string) (*UserStats, error) {
-	return s.repo.GetStats(userID)
+func defaultProfile(userID string) *Profile {
+	return &Profile{UserID: userID}
 }
 
-func (s *service) GetStreaks(userID string) (*UserStreaks, error) {
-	return s.repo.GetStreaks(userID)
+func buildProfileResponse(profile *Profile, metadata ProfileMetadata) *ProfileResponse {
+	return &ProfileResponse{
+		UserID:    profile.UserID,
+		FullName:  profile.FullName,
+		Username:  profile.Username,
+		Bio:       profile.Bio,
+		Birthdate: profile.Birthdate,
+		Metadata:  metadata,
+		CreatedAt: profile.CreatedAt,
+		UpdatedAt: profile.UpdatedAt,
+	}
 }
