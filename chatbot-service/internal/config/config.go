@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	sharedauth "github.com/focusnest/shared-libs/auth"
@@ -14,6 +15,7 @@ type Config struct {
 	GCPProjectID string
 	Auth         AuthConfig
 	Firestore    FirestoreConfig
+	LLM          LLMConfig
 }
 
 // AuthConfig stores authentication middleware setup.
@@ -29,6 +31,16 @@ type FirestoreConfig struct {
 	EmulatorHost string
 }
 
+// LLMConfig defines how the chatbot talks to Gemini.
+type LLMConfig struct {
+	APIKey          string
+	Model           string
+	ContextMessages int
+	MaxOutputTokens int
+	UseVertex       bool
+	Location        string
+}
+
 // Load reads environment variables into Config with validation.
 func Load() (Config, error) {
 	cfg := Config{
@@ -41,6 +53,14 @@ func Load() (Config, error) {
 		},
 		Firestore: FirestoreConfig{
 			EmulatorHost: envconfig.Get("FIRESTORE_EMULATOR_HOST", ""),
+		},
+		LLM: LLMConfig{
+			APIKey:          envconfig.Get("GEMINI_API_KEY", ""),
+			Model:           envconfig.Get("GEMINI_MODEL", "gemini-2.5-flash"),
+			ContextMessages: parseIntFallback(envconfig.Get("CHATBOT_CONTEXT_MESSAGES", "16"), 16),
+			MaxOutputTokens: parseIntFallback(envconfig.Get("CHATBOT_MAX_OUTPUT_TOKENS", "512"), 512),
+			UseVertex:       parseBool(envconfig.Get("GOOGLE_GENAI_USE_VERTEXAI", "false")),
+			Location:        envconfig.Get("GOOGLE_CLOUD_LOCATION", ""),
 		},
 	}
 
@@ -71,5 +91,39 @@ func validate(cfg Config) error {
 		return fmt.Errorf("unsupported auth mode: %s", cfg.Auth.Mode)
 	}
 
+	if cfg.LLM.ContextMessages <= 0 {
+		return fmt.Errorf("CHATBOT_CONTEXT_MESSAGES must be > 0")
+	}
+	if cfg.LLM.MaxOutputTokens <= 0 {
+		return fmt.Errorf("CHATBOT_MAX_OUTPUT_TOKENS must be > 0")
+	}
+	if cfg.LLM.UseVertex {
+		if strings.TrimSpace(cfg.LLM.Location) == "" {
+			return fmt.Errorf("GOOGLE_CLOUD_LOCATION is required when GOOGLE_GENAI_USE_VERTEXAI=true")
+		}
+	} else if strings.TrimSpace(cfg.LLM.APIKey) == "" {
+		return fmt.Errorf("GEMINI_API_KEY is required when GOOGLE_GENAI_USE_VERTEXAI is false")
+	}
+
 	return nil
+}
+
+func parseIntFallback(raw string, fallback int) int {
+	if strings.TrimSpace(raw) == "" {
+		return fallback
+	}
+	val, err := strconv.Atoi(raw)
+	if err != nil || val <= 0 {
+		return fallback
+	}
+	return val
+}
+
+func parseBool(raw string) bool {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }

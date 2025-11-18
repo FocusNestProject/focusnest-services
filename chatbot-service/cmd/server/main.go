@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -35,9 +36,23 @@ func main() {
 	}
 	defer client.Close()
 
-	// Initialize chatbot service
 	chatbotRepo := chatbot.NewFirestoreRepository(client)
-	chatbotService, err := chatbot.NewService(chatbotRepo)
+	assistant, err := chatbot.NewGeminiAssistant(ctx, chatbot.AssistantConfig{
+		APIKey:          cfg.LLM.APIKey,
+		Model:           cfg.LLM.Model,
+		MaxOutputTokens: cfg.LLM.MaxOutputTokens,
+		UseVertex:       cfg.LLM.UseVertex,
+		Project:         cfg.GCPProjectID,
+		Location:        cfg.LLM.Location,
+	})
+	if err != nil {
+		logger.Warn("falling back to template assistant", slog.String("reason", err.Error()))
+		assistant = chatbot.NewTemplateAssistant()
+	} else {
+		defer assistant.Close()
+	}
+
+	chatbotService, err := chatbot.NewService(chatbotRepo, assistant, cfg.LLM.ContextMessages)
 	if err != nil {
 		panic(fmt.Errorf("chatbot service init error: %w", err))
 	}

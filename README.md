@@ -6,26 +6,34 @@ This README combines the architectural overview with the endpoint-level API refe
 
 ## Architecture snapshot
 
-| Service          | Responsibility                                                                | Primary Endpoints                               | Current Status |
-| ---------------- | ----------------------------------------------------------------------------- | ----------------------------------------------- | -------------- |
-| Focus Service    | Capture productivity sessions with optional image uploads and pagination.     | `/v1/productivities`, `/v1/productivities/{id}` | Audited ✔︎     |
-| Progress Service | Generate analytics summaries and streak metrics from captured productivities. | `/v1/progress/summary`, `/v1/progress/streak/*` | Audited ✔︎     |
-| User Service     | Persist user profiles plus derived metadata (streaks, counters).              | `/v1/users/me`                                  | Audited ✔︎     |
-| Chatbot Service  | AI assistant consuming downstream APIs.                                       | `/v1/chat/*`                                    | Pending audit  |
-| Gateway API      | Authenticates public traffic and routes to downstream services.               | `/v1/*` proxy routes                            | Pending audit  |
+| Service          | Responsibility                                                                  | Primary Endpoints                               |
+| ---------------- | ------------------------------------------------------------------------------- | ----------------------------------------------- |
+| Focus Service    | Capture productivity sessions with optional image uploads and pagination.       | `/v1/productivities`, `/v1/productivities/{id}` |
+| Progress Service | Generate analytics summaries and streak metrics from captured productivities.   | `/v1/progress/summary`, `/v1/progress/streak/*` |
+| User Service     | Persist user profiles plus derived metadata (streaks, counters).                | `/v1/users/me`                                  |
+| Chatbot Service  | Stores multi-chat history and calls Gemini 2.5 Flash for productivity coaching. | `/v1/chatbot/*`                                 |
+| Gateway API      | Authenticates public traffic and routes to downstream services.                 | `/v1/*` proxy routes                            |
 
 ## Repository layout
 
 ```
 focusnest-services/
-├── focus-service/        # Productivity capture API
-├── progress-service/     # Analytics and streak calculations
-├── user-service/         # Profile storage and metadata
-├── gateway-api/          # Public entry point
-├── chatbot-service/      # Conversational assistant (pending audit)
-├── shared-libs/          # Authentication, logging, router helpers
-├── scripts/              # E2E and operational tooling
-└── mk/                   # Shared make targets
+├── activity-service/       # Future habit loops
+├── analytics-service/      # Long-form insights (WIP)
+├── auth-gateway/           # Edge auth helper
+├── chatbot-service/        # Productivity coach + history
+├── focus-service/          # Productivity capture API
+├── gateway-api/            # Public entry point and routing
+├── media-service/          # Image utilities
+├── notification-service/   # Push/email fanout
+├── postman/                # API collection
+├── progress-service/       # Analytics + streaks
+├── scripts/                # E2E helpers
+├── session-service/        # Session persistence
+├── shared-libs/            # Auth/logging/router packages
+├── user-service/           # Profiles + metadata
+├── webhook-service/        # Outbound webhooks
+└── mk/, docker-compose.yml, Makefile, go.work, etc.
 ```
 
 ## Getting started
@@ -112,7 +120,7 @@ Only packages with tests will execute code, but the command ensures every servic
 
 ## API Reference
 
-This section captures the endpoint-level contract for the three audited backend services (Focus, Progress, and User). All endpoints are authenticated behind the Gateway API in production. When calling services directly in local development, pass the `X-User-ID` header.
+This section captures the endpoint-level contract for the core backend services. All endpoints are authenticated behind the Gateway API in production. When calling services directly in local development, pass the `X-User-ID` header.
 
 ### Conventions
 
@@ -165,6 +173,20 @@ Response payload:
 - `description` is capped at 2000 characters. `mood` must be one of the allowed values when provided.
 - `start_time` and `end_time` must be RFC3339 timestamps (`2025-11-19T02:04:00Z`). `end_time` must be greater than or equal to `start_time`.
 
+| Field           | Type                                                                           | Required | Notes                                                               |
+| --------------- | ------------------------------------------------------------------------------ | -------- | ------------------------------------------------------------------- |
+| `activity_name` | string                                                                         | Yes      | Trimmed server-side; non-empty                                      |
+| `time_elapsed`  | int (seconds)                                                                  | Yes      | Must be > 0                                                         |
+| `num_cycle`     | int                                                                            | Yes      | Must be > 0                                                         |
+| `time_mode`     | enum (`Pomodoro`, `Deep Work`, `Quick Focus`, `Free Timer`, `Other`)           | Yes      | Case-sensitive                                                      |
+| `category`      | enum (`Work`, `Study`, `Read`, `Journal`, `Cook`, `Workout`, `Music`, `Other`) | Yes      | Case-sensitive                                                      |
+| `description`   | string                                                                         | No       | ≤ 2000 characters                                                   |
+| `mood`          | enum (`Fokus`, `Semangat`, `Biasa Aja`, `Capek`, `Burn Out`, `Mengantuk`)      | No       | Case-sensitive                                                      |
+| `start_time`    | string (RFC3339)                                                               | Yes      | UTC timestamp (`YYYY-MM-DDTHH:MM:SSZ`)                              |
+| `end_time`      | string (RFC3339)                                                               | Yes      | Must be ≥ `start_time`                                              |
+| `image`         | file (`.jpg`, `.jpeg`, `.png`)                                                 | No       | Multipart field named `image`; stored in Cloud Storage              |
+| `image_url`     | string (URL)                                                                   | No       | HTTPS link to an existing image; not used when `image` file present |
+
 Example JSON payload:
 
 ```json
@@ -187,6 +209,20 @@ Example JSON payload:
 - At least one mutable field must be supplied unless an image file is uploaded.
 - `time_mode`, `category`, and `mood` values are validated against the allowed lists.
 - Provide either a new binary `image` upload or an `image_url`, not both.
+
+| Field           | Type                                                                           | Required | Notes                                     |
+| --------------- | ------------------------------------------------------------------------------ | -------- | ----------------------------------------- |
+| `activity_name` | string                                                                         | No       | When supplied, trimmed server-side        |
+| `time_elapsed`  | int (seconds)                                                                  | No       | Must be > 0                               |
+| `num_cycle`     | int                                                                            | No       | Must be > 0                               |
+| `time_mode`     | enum (`Pomodoro`, `Deep Work`, `Quick Focus`, `Free Timer`, `Other`)           | No       | Case-sensitive                            |
+| `category`      | enum (`Work`, `Study`, `Read`, `Journal`, `Cook`, `Workout`, `Music`, `Other`) | No       | Case-sensitive                            |
+| `description`   | string                                                                         | No       | ≤ 2000 characters                         |
+| `mood`          | enum (`Fokus`, `Semangat`, `Biasa Aja`, `Capek`, `Burn Out`, `Mengantuk`)      | No       | Case-sensitive                            |
+| `start_time`    | string (RFC3339)                                                               | No       | UTC timestamp                             |
+| `end_time`      | string (RFC3339)                                                               | No       | Must be ≥ `start_time` when both provided |
+| `image`         | file (`.jpg`, `.jpeg`, `.png`)                                                 | No       | Multipart field named `image`             |
+| `image_url`     | string (URL)                                                                   | No       | HTTPS link for an existing image          |
 
 #### `GET /v1/productivities/{id}`
 
@@ -264,6 +300,13 @@ If a profile document does not exist yet, the service returns default values (bl
 - `birthdate` accepts an ISO `YYYY-MM-DD` string or explicit `null` to clear the stored value.
 - All string fields are trimmed server-side. Empty strings are allowed, but `username` uniqueness is enforced at the product level (outside this service).
 
+| Field       | Type                            | Required | Notes                                            |
+| ----------- | ------------------------------- | -------- | ------------------------------------------------ |
+| `full_name` | string                          | No       | Trimmed server-side; empty string allowed        |
+| `username`  | string                          | No       | Lower-level service enforces uniqueness; trimmed |
+| `bio`       | string                          | No       | Trimmed; recommend ≤ 2000 characters             |
+| `birthdate` | string (`YYYY-MM-DD`) or `null` | No       | Provide ISO date to set value or `null` to clear |
+
 Example payload:
 
 ```json
@@ -276,3 +319,77 @@ Example payload:
 ```
 
 Both endpoints compute metadata on the fly: `total_productivities` counts non-deleted productivity documents, `total_sessions` mirrors the same count (reserved for future divergence), and `longest_streak` is calculated in the Asia/Jakarta timezone.
+
+### Chatbot Service (`/v1/chatbot`)
+
+The chatbot keeps a complete history per user: every profile can open multiple chats (sessions) and each session records the ordered dialogue between the user (`role: user`) and the assistant (`role: assistant`). All endpoints require the `X-User-ID` header and respond in either English or Bahasa Indonesia based on the latest user input. When a prompt falls outside productivity/focus topics, the assistant replies with a boundaries message instead of answering. Gemini 2.5 Flash is used whenever a prompt remains in scope—with a capped context window to keep costs predictable.
+
+#### Gemini configuration
+
+| Variable                    | Required | Notes                                                                                              |
+| --------------------------- | -------- | -------------------------------------------------------------------------------------------------- |
+| `GEMINI_API_KEY`            | Yes\*    | Needed when `GOOGLE_GENAI_USE_VERTEXAI=false`. Supply an API key that has access to Gemini models. |
+| `GOOGLE_GENAI_USE_VERTEXAI` | No       | Set to `true` to route through Vertex AI using application default credentials. Defaults to false. |
+| `GOOGLE_CLOUD_LOCATION`     | Yes\*    | Required whenever `GOOGLE_GENAI_USE_VERTEXAI=true`. Example: `asia-southeast2`.                    |
+| `GCP_PROJECT_ID`            | Yes      | Already required by the service; reused for Vertex API calls.                                      |
+
+`GOOGLE_APPLICATION_CREDENTIALS` must point to a service-account JSON file when running locally with Vertex (unless your ADC context already has the role). When the Vertex flag is disabled the chatbot falls back to the standard Gemini API using `GEMINI_API_KEY`.
+
+#### `GET /v1/chatbot/sessions`
+
+Lists every chat session for the caller (sorted by `updated_at` descending) and includes `id`, `title`, and timestamps. This is the lightweight list to populate a sidebar.
+
+#### `GET /v1/chatbot/history`
+
+Returns every session (most recent first) together with its full message log when you need to hydrate everything in one request.
+
+#### `GET /v1/chatbot/sessions/{sessionID}`
+
+Fetches a single session plus its messages. Use this to lazily hydrate one chat thread.
+
+#### `PATCH /v1/chatbot/sessions/{sessionID}`
+
+Updates the stored title. Titles default to a summary of the very first message, so this endpoint lets users rename it later.
+
+| Field   | Type   | Required | Notes                                                                 |
+| ------- | ------ | -------- | --------------------------------------------------------------------- |
+| `title` | string | Yes      | Trimmed server-side; must be non-empty and typically ≤ 120 characters |
+
+#### `DELETE /v1/chatbot/sessions/{sessionID}`
+
+Deletes the session document and every dialog entry belonging to it.
+
+#### `POST /v1/chatbot/ask`
+
+Request body:
+
+```json
+{
+  "session_id": "optional-existing-id",
+  "question": "How can I stay focused for 30 minutes?"
+}
+```
+
+| Field        | Type   | Required | Notes                                                                             |
+| ------------ | ------ | -------- | --------------------------------------------------------------------------------- |
+| `session_id` | string | No       | Existing chat session ID (UUID). Leave blank to auto-create a new session + title |
+| `question`   | string | Yes      | Trimmed server-side; must be non-empty and stay within productivity/focus topics  |
+
+- Omit `session_id` to start a new chat; the service derives a title from the first prompt and returns the generated ID.
+- The assistant stores the user prompt, builds context from the most recent messages (respecting the configured window), and calls Gemini 2.5 Flash for a productivity-focused response. If the topic is out of bounds, it replies with the boundaries message instead of calling the model.
+- Responses mirror the user language (English or Bahasa Indonesia) and contain two to three actionable steps.
+
+Response payload:
+
+```json
+{
+  "session_id": "session-id",
+  "assistant_message": {
+    "role": "assistant",
+    "content": "Here’s a productivity check-in for \"weekly report\" (Work)…"
+  },
+  "messages": [
+    /* entire conversation including the new reply */
+  ]
+}
+```
