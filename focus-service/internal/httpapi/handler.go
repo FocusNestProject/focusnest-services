@@ -412,7 +412,10 @@ func respondProductivityServiceError(w http.ResponseWriter, err error) {
 }
 
 func headerUserID(r *http.Request) string {
-	return r.Header.Get("X-User-ID")
+	if v := r.Header.Get("X-User-ID"); v != "" {
+		return v
+	}
+	return r.Header.Get("x-user-id")
 }
 
 func parsePositiveInt(value string, fallback int) int {
