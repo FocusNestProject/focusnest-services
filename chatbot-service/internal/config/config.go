@@ -55,7 +55,7 @@ func Load() (Config, error) {
 			EmulatorHost: envconfig.Get("FIRESTORE_EMULATOR_HOST", ""),
 		},
 		LLM: LLMConfig{
-			APIKey:          envconfig.Get("GEMINI_API_KEY", ""),
+			APIKey:          resolveAPIKey(),
 			Model:           envconfig.Get("GEMINI_MODEL", "gemini-2.5-flash"),
 			ContextMessages: parseIntFallback(envconfig.Get("CHATBOT_CONTEXT_MESSAGES", "16"), 16),
 			MaxOutputTokens: parseIntFallback(envconfig.Get("CHATBOT_MAX_OUTPUT_TOKENS", "512"), 512),
@@ -102,10 +102,17 @@ func validate(cfg Config) error {
 			return fmt.Errorf("GOOGLE_CLOUD_LOCATION is required when GOOGLE_GENAI_USE_VERTEXAI=true")
 		}
 	} else if strings.TrimSpace(cfg.LLM.APIKey) == "" {
-		return fmt.Errorf("GEMINI_API_KEY is required when GOOGLE_GENAI_USE_VERTEXAI is false")
+		return fmt.Errorf("GEMINI_API_KEY or GOOGLE_API_KEY is required when GOOGLE_GENAI_USE_VERTEXAI is false")
 	}
 
 	return nil
+}
+
+func resolveAPIKey() string {
+	if apiKey := envconfig.Get("GEMINI_API_KEY", ""); strings.TrimSpace(apiKey) != "" {
+		return apiKey
+	}
+	return envconfig.Get("GOOGLE_API_KEY", "")
 }
 
 func parseIntFallback(raw string, fallback int) int {

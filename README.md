@@ -326,12 +326,12 @@ The chatbot keeps a complete history per user: every profile can open multiple c
 
 #### Gemini configuration
 
-| Variable                    | Required | Notes                                                                                              |
-| --------------------------- | -------- | -------------------------------------------------------------------------------------------------- |
-| `GEMINI_API_KEY`            | Yes\*    | Needed when `GOOGLE_GENAI_USE_VERTEXAI=false`. Supply an API key that has access to Gemini models. |
-| `GOOGLE_GENAI_USE_VERTEXAI` | No       | Set to `true` to route through Vertex AI using application default credentials. Defaults to false. |
-| `GOOGLE_CLOUD_LOCATION`     | Yes\*    | Required whenever `GOOGLE_GENAI_USE_VERTEXAI=true`. Example: `asia-southeast2`.                    |
-| `GCP_PROJECT_ID`            | Yes      | Already required by the service; reused for Vertex API calls.                                      |
+| Variable                            | Required | Notes                                                                                                   |
+| ----------------------------------- | -------- | ------------------------------------------------------------------------------------------------------- |
+| `GEMINI_API_KEY` / `GOOGLE_API_KEY` | Yes\*    | One of these must be set when `GOOGLE_GENAI_USE_VERTEXAI=false`. Provide an API key with Gemini access. |
+| `GOOGLE_GENAI_USE_VERTEXAI`         | No       | Set to `true` to route through Vertex AI using application default credentials. Defaults to false.      |
+| `GOOGLE_CLOUD_LOCATION`             | Yes\*    | Required whenever `GOOGLE_GENAI_USE_VERTEXAI=true`. Example: `asia-southeast2`.                         |
+| `GCP_PROJECT_ID`                    | Yes      | Already required by the service; reused for Vertex API calls.                                           |
 
 `GOOGLE_APPLICATION_CREDENTIALS` must point to a service-account JSON file when running locally with Vertex (unless your ADC context already has the role). When the Vertex flag is disabled the chatbot falls back to the standard Gemini API using `GEMINI_API_KEY`.
 
