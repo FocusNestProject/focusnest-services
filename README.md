@@ -1,164 +1,61 @@
-# FocusNest Microservices
+# FocusNest Services Handbook
 
-FocusNest is a suite of Go microservices that run on Firestore, Cloud Storage, and Clerk-based authentication. Each service owns a dedicated bounded context and exposes HTTP endpoints that are aggregated by the Gateway API.
+Centralized API contract and runbook for every service that lives in this monorepo. All public traffic flows through the Gateway API, but each downstream service exposes a documented REST surface for local testing and internal integration.
 
-This README combines the architectural overview with the endpoint-level API reference so you no longer have to jump into `docs/` for day-to-day work.
+## Monorepo map
 
-## Architecture snapshot
+| Service          | Path                | Responsibility                                                  | Primary endpoints                               |
+| ---------------- | ------------------- | --------------------------------------------------------------- | ----------------------------------------------- |
+| Focus Service    | `focus-service/`    | CRUD for productivity sessions, attachment uploads, pagination. | `/v1/productivities`, `/v1/productivities/{id}` |
+| Progress Service | `progress-service/` | Derived analytics (summaries, streaks, distributions).          | `/v1/progress/summary`, `/v1/progress/streak/*` |
+| User Service     | `user-service/`     | Profile data plus derived metadata (streak counters, totals).   | `/v1/users/me`                                  |
+| Chatbot Service  | `chatbot-service/`  | Multi-session productivity coach backed by Gemini / Vertex.     | `/v1/chatbot/*`                                 |
+| Gateway API      | `gateway-api/`      | Public entry point that handles Clerk auth and request routing. | `/v1/*` proxy surface                           |
+| Shared Libraries | `shared-libs/`      | Common auth, logging, DTO, and server scaffolding.              | Imported modules                                |
 
-| Service          | Responsibility                                                                  | Primary Endpoints                               |
-| ---------------- | ------------------------------------------------------------------------------- | ----------------------------------------------- |
-| Focus Service    | Capture productivity sessions with optional image uploads and pagination.       | `/v1/productivities`, `/v1/productivities/{id}` |
-| Progress Service | Generate analytics summaries and streak metrics from captured productivities.   | `/v1/progress/summary`, `/v1/progress/streak/*` |
-| User Service     | Persist user profiles plus derived metadata (streaks, counters).                | `/v1/users/me`                                  |
-| Chatbot Service  | Stores multi-chat history and calls Gemini 2.5 Flash for productivity coaching. | `/v1/chatbot/*`                                 |
-| Gateway API      | Authenticates public traffic and routes to downstream services.                 | `/v1/*` proxy routes                            |
+## Common requirements
 
-## Repository layout
+- **Auth:** In production everything sits behind Gateway API + Clerk JWT validation. When calling a service directly (local dev, port-forward, etc.) include `X-User-ID` or `x-user-id` with the authenticated subject.
+- **Dates & times:** Date-only fields use `YYYY-MM-DD`. Timestamps are RFC3339 with UTC (`2025-11-20T07:00:00Z`).
+- **Environments:** Each service honors `AUTH_MODE=noop` for local hacking. Firestore clients need `GCP_PROJECT_ID` plus either emulator vars or ADC credentials.
+- **Testing:** Run `go test ./...` from any service folder (or repo root) before pushing. Go 1.24+ and Docker are required for parity builds.
 
-```
-focusnest-services/
-├── activity-service/       # Future habit loops
-├── analytics-service/      # Long-form insights (WIP)
-├── auth-gateway/           # Edge auth helper
-├── chatbot-service/        # Productivity coach + history
-├── focus-service/          # Productivity capture API
-├── gateway-api/            # Public entry point and routing
-├── media-service/          # Image utilities
-├── notification-service/   # Push/email fanout
-├── postman/                # API collection
-├── progress-service/       # Analytics + streaks
-├── scripts/                # E2E helpers
-├── session-service/        # Session persistence
-├── shared-libs/            # Auth/logging/router packages
-├── user-service/           # Profiles + metadata
-├── webhook-service/        # Outbound webhooks
-└── mk/, docker-compose.yml, Makefile, go.work, etc.
-```
+---
 
-## Getting started
+## Service API reference
 
-### Prerequisites
+### Focus Service — `/v1/productivities`
 
-- Go 1.24 or newer
-- Docker (for local builds and Cloud Run parity)
-- Google Cloud SDK (when targeting Firestore/Storage)
-- Service account credentials with Firestore and Storage permissions (for cloud-backed runs)
+Allowed values:
 
-### Quick start (memory-backed service)
-
-```bash
-# Clone and sync workspace
-git clone https://github.com/FocusNestProject/focusnest-services.git
-cd focusnest-services
-go work sync
-
-# Run focus-service against in-memory storage
-cd focus-service
-PORT=8080 DATA_STORE=memory AUTH_MODE=noop go run ./cmd/server
-```
-
-Hit the health endpoint with the `X-User-ID` header during local testing:
-
-```bash
-curl -H "X-User-ID: test_user" http://localhost:8080/health
-```
-
-### Running against Firestore
-
-```bash
-export GOOGLE_APPLICATION_CREDENTIALS="/path/to/service-account.json"
-export GCP_PROJECT_ID="your-project-id"
-
-cd focus-service
-DATA_STORE=firestore AUTH_MODE=noop GCP_PROJECT_ID=$GCP_PROJECT_ID \
-  go run ./cmd/server
-```
-
-Use the same environment variables for progress-service and user-service whenever you need Firestore-backed persistence. The focus-service also needs bucket settings defined in `internal/storage` for image uploads.
-
-### Docker workflow
-
-```bash
-# Build and run a single service
-docker build -t focus-service-local -f focus-service/Dockerfile focus-service
-
-docker run -p 8080:8080 \
-  -e DATA_STORE=memory \
-  -e AUTH_MODE=noop \
-  focus-service-local
-```
-
-Use `docker-compose up` from the repo root to launch multiple services with shared configuration. To tear everything down, run `docker-compose down`.
-
-### Testing and formatting
-
-```bash
-go test ./...
-go fmt ./...
-```
-
-Only packages with tests will execute code, but the command ensures every service compiles.
-
-### Deployment overview
-
-- GitHub Actions workflows build and deploy every service to Cloud Run on pushes to `main`.
-- Gateway API routes client traffic and enforces Clerk JWT verification.
-- Set `FOCUS_URL`, `PROGRESS_URL`, `CHATBOT_URL`, and `USER_URL` on the gateway to point at the deployed services.
-
-### Security notes
-
-- Gateway API is the only public entry point; downstream services still validate `X-User-ID` for staged environments.
-- Focus Service image uploads are private and surfaced via 24-hour signed URLs.
-- `shared-libs/auth` centralizes Clerk JWKS fetching to avoid divergent validation logic.
-
-### Contributing
-
-1. Fork the repository and create a feature branch.
-2. Implement your change, run `go test ./...` and `go fmt ./...`.
-3. Submit a pull request detailing the affected services and any new environment variables.
-
-## API Reference
-
-This section captures the endpoint-level contract for the core backend services. All endpoints are authenticated behind the Gateway API in production. When calling services directly in local development, pass the `X-User-ID` header.
-
-### Conventions
-
-- **Headers**: `X-User-ID` (case-insensitive) is required on every request.
-- **Dates**: Unless stated otherwise, use ISO-8601 strings in the form `YYYY-MM-DD` for date-only fields and RFC3339 timestamps for date-time fields.
-- **Pagination**: Focus Service uses cursor-based pagination with `page_size` (1-100) and `page_token` query parameters.
-- **Enums**: Enumerated values are case-sensitive unless explicitly noted.
-
-### Focus Service (`/v1/productivities`)
-
-#### Allowed values
-
-- **Categories**: `Work`, `Study`, `Read`, `Journal`, `Cook`, `Workout`, `Music`, `Other`
-- **Time modes**: `Pomodoro`, `Deep Work`, `Quick Focus`, `Free Timer`, `Other`
-- **Moods** (optional): `Fokus`, `Semangat`, `Biasa Aja`, `Capek`, `Burn Out`, `Mengantuk`
+- `category`: `Work`, `Study`, `Read`, `Journal`, `Cook`, `Workout`, `Music`, `Other`
+- `time_mode`: `Pomodoro`, `Deep Work`, `Quick Focus`, `Free Timer`, `Other`
+- `mood` (optional): `Fokus`, `Semangat`, `Biasa Aja`, `Capek`, `Burn Out`, `Mengantuk`
 
 #### `GET /v1/productivities`
 
-| Query param  | Type   | Notes                                                    |
-| ------------ | ------ | -------------------------------------------------------- |
-| `page_size`  | int    | Defaults to 20, max 100                                  |
-| `page_token` | string | Cursor from previous response                            |
-| `month`      | int    | Optional filter, must be 1-12. Requires `year` to be set |
-| `year`       | int    | Optional filter (1970-2100). Requires `month` to be set  |
+| Query        | Type   | Notes                         |
+| ------------ | ------ | ----------------------------- |
+| `page_size`  | int    | Default 20, max 100           |
+| `page_token` | string | Cursor from previous response |
+| `month`      | int    | 1-12; requires `year`         |
+| `year`       | int    | 1970-2100; requires `month`   |
 
-Response payload:
+Response skeleton:
 
 ```jsonc
 {
   "items": [
     {
       "id": "entry-id",
-      "image": "https://signed-url",
+      "activity_name": "Deep focus block",
       "category": "Work",
       "time_elapsed": 1500,
       "num_cycle": 3,
       "time_mode": "Pomodoro",
-      "start_time": "2025-11-19T02:04:00Z"
+      "start_time": "2025-11-19T02:04:00Z",
+      "end_time": "2025-11-19T02:29:00Z",
+      "image": "https://signed-url"
     }
   ],
   "next_page_token": "opaque-cursor",
@@ -168,61 +65,100 @@ Response payload:
 
 #### `POST /v1/productivities`
 
-- Supports JSON or `multipart/form-data`. When using multipart, the binary field is named `image` and an optional `image_url` string can be provided instead.
-- Required fields: `activity_name`, `time_elapsed` (seconds), `num_cycle`, `time_mode`, `category`, `start_time`, `end_time`.
-- `description` is capped at 2000 characters. `mood` must be one of the allowed values when provided.
-- `start_time` and `end_time` must be RFC3339 timestamps (`2025-11-19T02:04:00Z`). `end_time` must be greater than or equal to `start_time`.
+Accepts JSON or `multipart/form-data` (binary field named `image`). Required fields are bold.
 
-| Field           | Type                                                                           | Required | Notes                                                               |
-| --------------- | ------------------------------------------------------------------------------ | -------- | ------------------------------------------------------------------- |
-| `activity_name` | string                                                                         | Yes      | Trimmed server-side; non-empty                                      |
-| `time_elapsed`  | int (seconds)                                                                  | Yes      | Must be > 0                                                         |
-| `num_cycle`     | int                                                                            | Yes      | Must be > 0                                                         |
-| `time_mode`     | enum (`Pomodoro`, `Deep Work`, `Quick Focus`, `Free Timer`, `Other`)           | Yes      | Case-sensitive                                                      |
-| `category`      | enum (`Work`, `Study`, `Read`, `Journal`, `Cook`, `Workout`, `Music`, `Other`) | Yes      | Case-sensitive                                                      |
-| `description`   | string                                                                         | No       | ≤ 2000 characters                                                   |
-| `mood`          | enum (`Fokus`, `Semangat`, `Biasa Aja`, `Capek`, `Burn Out`, `Mengantuk`)      | No       | Case-sensitive                                                      |
-| `start_time`    | string (RFC3339)                                                               | Yes      | UTC timestamp (`YYYY-MM-DDTHH:MM:SSZ`)                              |
-| `end_time`      | string (RFC3339)                                                               | Yes      | Must be ≥ `start_time`                                              |
-| `image`         | file (`.jpg`, `.jpeg`, `.png`)                                                 | No       | Multipart field named `image`; stored in Cloud Storage              |
-| `image_url`     | string (URL)                                                                   | No       | HTTPS link to an existing image; not used when `image` file present |
+| Field               | Type          | Notes              |
+| ------------------- | ------------- | ------------------ |
+| **`activity_name`** | string        | Trimmed, non-empty |
+| **`time_elapsed`**  | int (seconds) | > 0                |
+| **`num_cycle`**     | int           | > 0                |
 
-Example JSON payload:
+# FocusNest Services Handbook
 
-```json
+Centralized API contract and runbook for every service in this monorepo. All public traffic flows through the Gateway API, but each downstream service exposes a REST surface for internal integrations, Postman testing, and local development.
+
+## Monorepo map
+
+| Service          | Path                | Responsibility                                                  | Primary endpoints                               |
+| ---------------- | ------------------- | --------------------------------------------------------------- | ----------------------------------------------- |
+| Focus Service    | `focus-service/`    | CRUD for productivity sessions, attachment uploads, pagination. | `/v1/productivities`, `/v1/productivities/{id}` |
+| Progress Service | `progress-service/` | Derived analytics (summaries, streaks, distributions).          | `/v1/progress/summary`, `/v1/progress/streak/*` |
+| User Service     | `user-service/`     | Profile data plus derived metadata (streak counters, totals).   | `/v1/users/me`                                  |
+| Chatbot Service  | `chatbot-service/`  | Multi-session productivity coach backed by Gemini / Vertex.     | `/v1/chatbot/*`                                 |
+| Gateway API      | `gateway-api/`      | Public entry point that handles Clerk auth and request routing. | `/v1/*` proxy surface                           |
+| Shared Libraries | `shared-libs/`      | Common auth, logging, DTO, and server scaffolding.              | Imported modules                                |
+
+## Common requirements
+
+- **Auth:** In production everything sits behind Gateway API + Clerk JWT validation. When calling a service directly (local dev, port-forward, etc.) include `X-User-ID` with the authenticated subject (case-insensitive).
+- **Dates & times:** Date-only fields use `YYYY-MM-DD`. Timestamps are RFC3339 with UTC (`2025-11-20T07:00:00Z`). Most analytics are anchored to the Asia/Jakarta timezone when defaults are needed.
+- **Environments:** Each service honors `AUTH_MODE=noop` for local hacking. Firestore clients need `GCP_PROJECT_ID` plus either emulator variables or ADC credentials (`GOOGLE_APPLICATION_CREDENTIALS`).
+- **Testing:** Run `go test ./...` from any service folder (or repo root) before pushing. Go 1.24+ and Docker are required for parity builds.
+
+---
+
+## Service API reference
+
+### Focus Service — `/v1/productivities`
+
+Allowed values:
+
+- `category`: `Work`, `Study`, `Read`, `Journal`, `Cook`, `Workout`, `Music`, `Other`
+- `time_mode`: `Pomodoro`, `Deep Work`, `Quick Focus`, `Free Timer`, `Other`
+- `mood` (optional): `Fokus`, `Semangat`, `Biasa Aja`, `Capek`, `Burn Out`, `Mengantuk`
+
+#### `GET /v1/productivities`
+
+| Query        | Type   | Notes                         |
+| ------------ | ------ | ----------------------------- |
+| `page_size`  | int    | Default 20, max 100           |
+| `page_token` | string | Cursor from previous response |
+| `month`      | int    | 1-12; requires `year`         |
+| `year`       | int    | 1970-2100; requires `month`   |
+
+Response skeleton:
+
+```jsonc
 {
-  "activity_name": "Deep focus block",
-  "time_elapsed": 1500,
-  "num_cycle": 3,
-  "time_mode": "Pomodoro",
-  "category": "Work",
-  "description": "Wrote status updates",
-  "mood": "Semangat",
-  "start_time": "2025-11-19T02:04:00Z",
-  "end_time": "2025-11-19T02:29:00Z"
+  "items": [
+    {
+      "id": "entry-id",
+      "activity_name": "Deep focus block",
+      "category": "Work",
+      "time_elapsed": 1500,
+      "num_cycle": 3,
+      "time_mode": "Pomodoro",
+      "start_time": "2025-11-19T02:04:00Z",
+      "end_time": "2025-11-19T02:29:00Z",
+      "image": "https://signed-url"
+    }
+  ],
+  "next_page_token": "opaque-cursor",
+  "total_items": 42
 }
 ```
 
+#### `POST /v1/productivities`
+
+Accepts JSON or `multipart/form-data` (binary field named `image`). Required fields are bold.
+
+| Field               | Type                           | Notes                               |
+| ------------------- | ------------------------------ | ----------------------------------- |
+| **`activity_name`** | string                         | Trimmed, non-empty                  |
+| **`time_elapsed`**  | int (seconds)                  | > 0                                 |
+| **`num_cycle`**     | int                            | > 0                                 |
+| **`time_mode`**     | enum                           | Use allowed list                    |
+| **`category`**      | enum                           | Use allowed list                    |
+| `description`       | string                         | ≤ 2000 chars                        |
+| `mood`              | enum                           | Optional                            |
+| **`start_time`**    | RFC3339 timestamp              | UTC                                 |
+| **`end_time`**      | RFC3339 timestamp              | Must be ≥ `start_time`              |
+| `image`             | file (`.jpg`, `.jpeg`, `.png`) | Multipart only                      |
+| `image_url`         | string                         | HTTPS link when using remote assets |
+
 #### `PATCH /v1/productivities/{id}`
 
-- Accepts JSON or multipart (same rules as `POST`).
-- At least one mutable field must be supplied unless an image file is uploaded.
-- `time_mode`, `category`, and `mood` values are validated against the allowed lists.
-- Provide either a new binary `image` upload or an `image_url`, not both.
-
-| Field           | Type                                                                           | Required | Notes                                     |
-| --------------- | ------------------------------------------------------------------------------ | -------- | ----------------------------------------- |
-| `activity_name` | string                                                                         | No       | When supplied, trimmed server-side        |
-| `time_elapsed`  | int (seconds)                                                                  | No       | Must be > 0                               |
-| `num_cycle`     | int                                                                            | No       | Must be > 0                               |
-| `time_mode`     | enum (`Pomodoro`, `Deep Work`, `Quick Focus`, `Free Timer`, `Other`)           | No       | Case-sensitive                            |
-| `category`      | enum (`Work`, `Study`, `Read`, `Journal`, `Cook`, `Workout`, `Music`, `Other`) | No       | Case-sensitive                            |
-| `description`   | string                                                                         | No       | ≤ 2000 characters                         |
-| `mood`          | enum (`Fokus`, `Semangat`, `Biasa Aja`, `Capek`, `Burn Out`, `Mengantuk`)      | No       | Case-sensitive                            |
-| `start_time`    | string (RFC3339)                                                               | No       | UTC timestamp                             |
-| `end_time`      | string (RFC3339)                                                               | No       | Must be ≥ `start_time` when both provided |
-| `image`         | file (`.jpg`, `.jpeg`, `.png`)                                                 | No       | Multipart field named `image`             |
-| `image_url`     | string (URL)                                                                   | No       | HTTPS link for an existing image          |
+Same shape as `POST`; all fields optional but at least one mutation (or a new `image`) must be supplied. Values are validated against the enums above.
 
 #### `GET /v1/productivities/{id}`
 
@@ -230,27 +166,37 @@ Returns the full entry with all fields captured at creation time. The `image` fi
 
 #### `DELETE /v1/productivities/{id}`
 
-Soft-deletes the entry for the authenticated user. Repeated deletions on the same ID return `404`.
+Soft-delete; repeated deletes return `404`.
 
-### Progress Service (`/v1/progress`)
+---
 
-#### Summary endpoint — `GET /v1/progress/summary`
+### Progress Service — `/v1/progress`
 
-| Query param      | Type   | Notes                                                   |
-| ---------------- | ------ | ------------------------------------------------------- |
-| `range`          | enum   | `week`, `month`, `3months`, `year` (defaults to `week`) |
-| `category`       | string | Optional filter (case-insensitive)                      |
-| `reference_date` | date   | ISO `YYYY-MM-DD`. Defaults to "today" in Asia/Jakarta   |
+#### `GET /v1/progress/summary`
 
-Response fields:
+| Query            | Type                                      | Notes                            |
+| ---------------- | ----------------------------------------- | -------------------------------- |
+| `range`          | enum (`week`, `month`, `3months`, `year`) | Default `week`                   |
+| `category`       | string                                    | Optional filter                  |
+| `reference_date` | `YYYY-MM-DD`                              | Defaults to today (Asia/Jakarta) |
 
-- `range`: Echoes the requested summary window.
-- `reference_date`: Anchor day for the calculation (UTC timestamp string).
-- `total_filtered_time`: Minutes spent in the filtered category (or all categories when blank).
-- `time_distribution`: Array of `{ label, time_elapsed }` buckets whose shape depends on the range (weekday labels for `week`, weeks for `month`, months for `3months`, and quarters for `year`).
-- `total_sessions`: Number of sessions matching the category filter.
-- `total_time_frame`: Minutes spent across all categories within the window.
-- `most_productive_hour_start` / `most_productive_hour_end`: UTC timestamps delimiting the most productive hour during the window (null when insufficient data).
+Response:
+
+```jsonc
+{
+  "range": "week",
+  "reference_date": "2025-11-20T00:00:00Z",
+  "time_distribution": [
+    { "label": "Mon", "time_elapsed": 120 },
+    { "label": "Tue", "time_elapsed": 95 }
+  ],
+  "total_filtered_time": 420,
+  "total_time_frame": 580,
+  "total_sessions": 12,
+  "most_productive_hour_start": "2025-11-20T01:00:00Z",
+  "most_productive_hour_end": "2025-11-20T02:00:00Z"
+}
+```
 
 #### Streak endpoints
 
@@ -264,21 +210,20 @@ All streak endpoints return `days`, an ordered list with:
 }
 ```
 
-- `GET /v1/progress/streak/monthly?date=YYYY-MM-DD` — derives `month` and `year` from the optional `date`. Defaults to current month in Asia/Jakarta. Response also includes `total_streak` (longest all-time streak) and `current_streak` for the month.
-- `GET /v1/progress/streak/weekly?date=YYYY-MM-DD` — Snapshots the ISO week containing `date` (defaults to current week). Response includes ISO week label (`week`), `total_streak`, and `current_streak`.
-- `GET /v1/progress/streak/current` — Examines the trailing 30-day window ending today.
+- `GET /v1/progress/streak/monthly?date=YYYY-MM-DD` — derives `month`/`year` from the optional anchor date. Defaults to current month in Asia/Jakarta. Response includes `total_streak` (longest all-time) and `current_streak` for the displayed month.
+- `GET /v1/progress/streak/weekly?date=YYYY-MM-DD` — snapshots the ISO week containing `date` (defaults to current week). Response includes ISO week label and streak metadata.
+- `GET /v1/progress/streak/current` — examines the trailing 30-day window ending today.
 
-### User Service (`/v1/users/me`)
+---
+
+### User Service — `/v1/users/me`
 
 #### `GET /v1/users/me`
 
-Returns the persisted profile merged with derived metadata:
-
-```json
+```jsonc
 {
   "user_id": "uid-123",
   "full_name": "Focus Nest",
-  "username": "focusnest",
   "bio": "building calm productivity",
   "birthdate": "1996-09-14",
   "metadata": {
@@ -291,73 +236,168 @@ Returns the persisted profile merged with derived metadata:
 }
 ```
 
-If a profile document does not exist yet, the service returns default values (blank strings, `null` birthdate) while still computing metadata from the user's productivities.
+If the profile does not exist yet, the service returns default values (blank strings, `null` birthdate) while still computing metadata from the user's productivities.
 
 #### `PATCH /v1/users/me`
 
-- Body must be JSON (max 64 KB) and may include any combination of `full_name`, `username`, `bio`, and `birthdate`.
-- Unknown fields are rejected.
-- `birthdate` accepts an ISO `YYYY-MM-DD` string or explicit `null` to clear the stored value.
-- All string fields are trimmed server-side. Empty strings are allowed, but `username` uniqueness is enforced at the product level (outside this service).
+| Field       | Type                   | Notes                                            |
+| ----------- | ---------------------- | ------------------------------------------------ |
+| `full_name` | string                 | Optional, trimmed                                |
+| `username`  | string                 | Optional, trimmed, unique at product level       |
+| `bio`       | string                 | Optional, trimmed                                |
+| `birthdate` | `YYYY-MM-DD` or `null` | Provide ISO date to set value or `null` to clear |
 
-| Field       | Type                            | Required | Notes                                            |
-| ----------- | ------------------------------- | -------- | ------------------------------------------------ |
-| `full_name` | string                          | No       | Trimmed server-side; empty string allowed        |
-| `username`  | string                          | No       | Lower-level service enforces uniqueness; trimmed |
-| `bio`       | string                          | No       | Trimmed; recommend ≤ 2000 characters             |
-| `birthdate` | string (`YYYY-MM-DD`) or `null` | No       | Provide ISO date to set value or `null` to clear |
+Body must be JSON (max 64 KB). Unknown fields are rejected. Empty strings are allowed, but `username` uniqueness is enforced upstream.
 
-Example payload:
+---
 
-```json
-{
-  "full_name": "Focus Nest",
-  "username": "focusnest",
-  "bio": "building calm productivity",
-  "birthdate": "1996-09-14"
-}
-```
+### Chatbot Service — `/v1/chatbot`
 
-Both endpoints compute metadata on the fly: `total_productivities` counts non-deleted productivity documents, `total_sessions` mirrors the same count (reserved for future divergence), and `longest_streak` is calculated in the Asia/Jakarta timezone.
-
-### Chatbot Service (`/v1/chatbot`)
-
-The chatbot keeps a complete history per user: every profile can open multiple chats (sessions) and each session records the ordered dialogue between the user (`role: user`) and the assistant (`role: assistant`). All endpoints require the `X-User-ID` header and respond in either English or Bahasa Indonesia based on the latest user input. When a prompt falls outside productivity/focus topics, the assistant replies with a boundaries message instead of answering. Gemini 2.5 Flash is used whenever a prompt remains in scope—with a capped context window to keep costs predictable.
+The chatbot keeps a complete history per user: every profile can open multiple sessions and each session records the ordered dialogue between the user (`role: user`) and the assistant (`role: assistant`). Gemini 2.5 Flash is used whenever a prompt remains within productivity/focus topics, with localization (English or Bahasa Indonesia) mirroring the most recent user input.
 
 #### Gemini configuration
 
-| Variable                            | Required | Notes                                                                                                   |
-| ----------------------------------- | -------- | ------------------------------------------------------------------------------------------------------- |
-| `GEMINI_API_KEY` / `GOOGLE_API_KEY` | Yes\*    | One of these must be set when `GOOGLE_GENAI_USE_VERTEXAI=false`. Provide an API key with Gemini access. |
-| `GOOGLE_GENAI_USE_VERTEXAI`         | No       | Set to `true` to route through Vertex AI using application default credentials. Defaults to false.      |
-| `GOOGLE_CLOUD_LOCATION`             | Yes\*    | Required whenever `GOOGLE_GENAI_USE_VERTEXAI=true`. Example: `asia-southeast2`.                         |
-| `GCP_PROJECT_ID`                    | Yes      | Already required by the service; reused for Vertex API calls.                                           |
+| Variable                            | Required | Notes                                                                         |
+| ----------------------------------- | -------- | ----------------------------------------------------------------------------- |
+| `GEMINI_API_KEY` / `GOOGLE_API_KEY` | Yes\*    | Provide one when `GOOGLE_GENAI_USE_VERTEXAI=false`.                           |
+| `GOOGLE_GENAI_USE_VERTEXAI`         | No       | Set `true` to route through Vertex AI. Defaults to `false`.                   |
+| `GOOGLE_CLOUD_LOCATION`             | Yes\*    | Required whenever `GOOGLE_GENAI_USE_VERTEXAI=true` (e.g., `asia-southeast2`). |
+| `GCP_PROJECT_ID`                    | Yes      | Shared requirement across services.                                           |
+| `GOOGLE_APPLICATION_CREDENTIALS`    | Yes\*    | Needed when using Vertex locally unless ADC already configured.               |
 
-`GOOGLE_APPLICATION_CREDENTIALS` must point to a service-account JSON file when running locally with Vertex (unless your ADC context already has the role). When the Vertex flag is disabled the chatbot falls back to the standard Gemini API using `GEMINI_API_KEY`.
+#### Endpoints
+
+- `GET /v1/chatbot/sessions` — Lists every chat session for the caller (`id`, `title`, timestamps).
+- `GET /v1/chatbot/history` — Returns every session together with its message log.
+- `GET /v1/chatbot/sessions/{sessionID}` — Fetches a single session plus up to the 200 most recent messages (older turns are trimmed server-side).
+- `PATCH /v1/chatbot/sessions/{sessionID}` — Body `{ "title": "Marketing retro" }`. Title is required and trimmed.
+- `DELETE /v1/chatbot/sessions/{sessionID}` — Removes the session document and every dialog entry belonging to it (HTTP `204`).
+- `POST /v1/chatbot/ask` — Body `{ "session_id": "optional-existing-id", "question": "How can I stay focused for 30 minutes?" }`. Omit `session_id` to start a new chat; the service derives a title from the first prompt and returns the generated session ID together with the assistant reply.
+
+Responses include the saved assistant message and, when necessary, the trimmed context window that was sent to Gemini.
+
+---
+
+### Gateway API — `/v1/*`
+
+Acts as the only public surface:
+
+- Validates Clerk JWTs (production) or propagates noop auth (`AUTH_MODE=noop`) for local development.
+- Injects `X-User-ID` before proxying to downstream services (`FOCUS_URL`, `PROGRESS_URL`, `CHATBOT_URL`, `USER_URL`).
+- Exposes `/healthz` for Cloud Run load balancers and local smoke tests.
+- Adds a consistent `requestId` header that downstream services log via `shared-libs/logging`.
+
+---
+
+## Tooling & workflows
+
+- `go work sync` keeps local modules aligned with the multi-module workspace.
+- `docker build -t focusnest/<service>:local -f <service>/Dockerfile .` produces Cloud Run–compatible images (static `CGO_ENABLED=0` binaries).
+- `scripts/e2e.sh` can smoke-test critical flows end-to-end (focus → progress → user).
+- Shared middleware (`shared-libs/server`) ships with logging, panic recovery, and CORS helpers.
+
+## Contributing checklist
+
+1. Branch from `main` and keep changes scoped to one service when possible.
+2. Update this README whenever you add or change an endpoint.
+3. Run `go test ./...` (or service-specific tests) before committing.
+4. Push and open a PR—GitHub Actions will build, lint, and deploy to staging.
+
+#### `GET /v1/progress/summary`
+
+| Query            | Type                                      | Notes                            |
+| ---------------- | ----------------------------------------- | -------------------------------- |
+| `range`          | enum (`week`, `month`, `3months`, `year`) | Default `week`                   |
+| `category`       | string                                    | Optional filter                  |
+| `reference_date` | `YYYY-MM-DD`                              | Defaults to today (Asia/Jakarta) |
+
+Response:
+
+```jsonc
+{
+  "range": "week",
+  "reference_date": "2025-11-20T00:00:00Z",
+  "time_distribution": [
+    { "label": "Mon", "time_elapsed": 120 },
+    { "label": "Tue", "time_elapsed": 95 }
+  ],
+  "total_filtered_time": 420,
+  "total_time_frame": 580,
+  "total_sessions": 12,
+  "most_productive_hour_start": "2025-11-20T01:00:00Z",
+  "most_productive_hour_end": "2025-11-20T02:00:00Z"
+}
+```
+
+#### `GET /v1/progress/streak/monthly`
+
+`?date=YYYY-MM-DD` anchors the calendar month. Response includes `days[]`, `current_streak`, and `total_streak`.
+
+#### `GET /v1/progress/streak/weekly`
+
+`?date=YYYY-MM-DD` anchors the ISO week. Response mirrors monthly but for seven days.
+
+#### `GET /v1/progress/streak/current`
+
+Looks at the trailing 30 days ending today.
+
+---
+
+### User Service — `/v1/users/me`
+
+#### `GET /v1/users/me`
+
+```jsonc
+{
+  "user_id": "uid-123",
+  "bio": "building calm productivity",
+  "birthdate": "1996-09-14",
+  "metadata": {
+    "longest_streak": 12,
+    "total_productivities": 48,
+    "total_sessions": 48
+  },
+  "created_at": "2025-11-19T09:10:11Z",
+  "updated_at": "2025-11-19T10:00:00Z"
+}
+```
+
+If the profile does not exist, defaults are returned (blank strings, `null` birthdate) while metadata is still computed.
+
+#### `PATCH /v1/users/me`
+
+| Field       | Type                   | Notes             |
+| ----------- | ---------------------- | ----------------- |
+| `bio`       | string                 | Optional, trimmed |
+| `birthdate` | `YYYY-MM-DD` or `null` | Set or clear date |
+
+Any combination may be provided. Response echoes the updated profile.
+
+---
+
+### Chatbot Service — `/v1/chatbot`
+
+- Firestore database defaults to `focusnest-prod`; emulator runs use `(default)`.
+- Context window is capped via `CHATBOT_CONTEXT_MESSAGES` (default 16). Hidden system prompts never hit Firestore.
+- Responses are localized (English/Bahasa) according to the most recent user input, and out-of-scope prompts return the boundaries message instead of hitting Gemini.
 
 #### `GET /v1/chatbot/sessions`
 
-Lists every chat session for the caller (sorted by `updated_at` descending) and includes `id`, `title`, and timestamps. This is the lightweight list to populate a sidebar.
-
-#### `GET /v1/chatbot/history`
-
-Returns every session (most recent first) together with its full message log when you need to hydrate everything in one request.
+List every chat session (`id`, `title`, `created_at`, `updated_at`).
 
 #### `GET /v1/chatbot/sessions/{sessionID}`
 
-Fetches a single session plus its messages. Use this to lazily hydrate one chat thread.
+Returns the session metadata plus the most recent **200** messages (older turns are trimmed server-side):
 
-#### `PATCH /v1/chatbot/sessions/{sessionID}`
-
-Updates the stored title. Titles default to a summary of the very first message, so this endpoint lets users rename it later.
-
-| Field   | Type   | Required | Notes                                                                 |
-| ------- | ------ | -------- | --------------------------------------------------------------------- |
-| `title` | string | Yes      | Trimmed server-side; must be non-empty and typically ≤ 120 characters |
-
-#### `DELETE /v1/chatbot/sessions/{sessionID}`
-
-Deletes the session document and every dialog entry belonging to it.
+```jsonc
+{
+  "session": { "id": "abc", "title": "Weekly planning" },
+  "messages": [
+    { "role": "user", "content": "help me plan" },
+    { "role": "assistant", "content": "Let's prioritize…" }
+  ]
+}
+```
 
 #### `POST /v1/chatbot/ask`
 
@@ -370,26 +410,37 @@ Request body:
 }
 ```
 
-| Field        | Type   | Required | Notes                                                                             |
-| ------------ | ------ | -------- | --------------------------------------------------------------------------------- |
-| `session_id` | string | No       | Existing chat session ID (UUID). Leave blank to auto-create a new session + title |
-| `question`   | string | Yes      | Trimmed server-side; must be non-empty and stay within productivity/focus topics  |
+| Field        | Type   | Notes                                   |
+| ------------ | ------ | --------------------------------------- |
+| `session_id` | string | Leave empty to auto-create a session    |
+| `question`   | string | Required, trimmed, productivity-focused |
 
-- Omit `session_id` to start a new chat; the service derives a title from the first prompt and returns the generated ID.
-- The assistant stores the user prompt, builds context from the most recent messages (respecting the configured window), and calls Gemini 2.5 Flash for a productivity-focused response. If the topic is out of bounds, it replies with the boundaries message instead of calling the model.
-- Responses mirror the user language (English or Bahasa Indonesia) and contain two to three actionable steps.
+Response:
 
-Response payload:
-
-```json
+```jsonc
 {
-  "session_id": "session-id",
+  "session_id": "abc",
   "assistant_message": {
     "role": "assistant",
-    "content": "Here’s a productivity check-in for \"weekly report\" (Work)…"
-  },
-  "messages": [
-    /* entire conversation including the new reply */
-  ]
+    "content": "Here’s how to stay on track for the next 30 minutes…"
+  }
 }
 ```
+
+Fetch the transcript via `GET /sessions/{id}` if you need the full log.
+
+#### `PATCH /v1/chatbot/sessions/{sessionID}`
+
+Body:
+
+```json
+{ "title": "Marketing retro" }
+```
+
+Title is required and trimmed.
+
+#### `DELETE /v1/chatbot/sessions/{sessionID}`
+
+Removes the session and all associated messages (HTTP `204`).
+
+---

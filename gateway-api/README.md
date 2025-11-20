@@ -1,9 +1,3 @@
-# FocusNest Gateway API
+# Documentation moved
 
-Public entrypoint for FocusNest clients. Proxies authenticated requests to internal services and exposes diagnostics endpoints.
-
-## Development
-
-```sh
-make run
-```
+Gateway notes now live in the centralized root `README.md`. Use the root handbook for auth requirements, routing details, and development workflows.

@@ -1,22 +1,3 @@
-# FocusNest Shared Libraries
+# Documentation moved
 
-Common utilities, DTOs, and typed event definitions shared across FocusNest microservices.
-
-## Packages
-
-- `dto`: Type-safe payloads for REST APIs.
-- `events`: Pub/Sub contracts for inter-service messaging.
-- `errors`: Canonical error envelopes and helpers.
-- `envconfig`: Tiny helpers for reading environment variables with validation.
-- `logging`: slog helpers tuned for Cloud Logging.
-- `pubsub`: Shared topic constants.
-- `server`: HTTP router scaffolding with consistent middleware and `/healthz` handling.
-
-## Development
-
-```sh
-make lint
-make test
-```
-
-Generated code from OpenAPI specs will live under each service, while canonical specs remain in `openapi/`.
+Shared library usage and package notes now live in the centralized root `README.md`. Check the root handbook for details on DTOs, middleware, and cross-service helpers.

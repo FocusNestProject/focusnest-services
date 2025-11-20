@@ -40,28 +40,7 @@ Allows partial profile updates. The payload may include any combination of `bio`
 
 ```json
 {
-  "bio": "building calm productivity",
-  "birthdate": "1996-09-14"
-}
-```
+  # Documentation moved
 
-**Response:**
-
-Returns the updated profile object (same structure as `GET /v1/users/me`).
-
-## Metadata Derivation
-
-Metadata fields are computed on each request to guarantee freshness:
-
-- **total_productivities / total_sessions**: number of non-deleted documents inside `users/{id}/productivities`.
-- **longest_streak**: the longest run of consecutive days (Asia/Jakarta timezone) with at least one productivity entry. Duplicate entries within the same day are deduplicated to prevent streak inflation.
-
-Firestore reads are scoped to only the necessary fields (`start_time`, `deleted`) to keep calls efficient even for large histories.
-
-## Development
-
-Run tests locally with:
-
-```bash
-go test ./...
+  Service-level docs now live in the centralized root `README.md`. Please consult the root handbook for configuration, API reference, and troubleshooting details for the user-service.
 ```
