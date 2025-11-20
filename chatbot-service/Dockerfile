@@ -13,7 +13,6 @@ COPY user-service/go.mod user-service/go.sum ./user-service/
 
 # Download dependencies
 RUN go work sync
-RUN go work sync
 
 # Copy source code
 COPY shared-libs ./shared-libs
@@ -21,7 +20,7 @@ COPY chatbot-service ./chatbot-service
 
 # Build the application
 WORKDIR /app/chatbot-service
-RUN CGO_ENABLED=0 GOOS=linux go build -o server ./cmd/server
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o server ./cmd/server
 
 # Final stage
 FROM alpine:latest

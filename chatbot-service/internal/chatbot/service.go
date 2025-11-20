@@ -59,22 +59,6 @@ func (s *service) GetSession(userID, sessionID string) (*ChatbotSession, error) 
 	return s.ensureSessionOwnership(userID, sessionID)
 }
 
-func (s *service) GetHistory(userID string) ([]*SessionHistory, error) {
-	sessions, err := s.repo.GetSessions(userID)
-	if err != nil {
-		return nil, fmt.Errorf("get sessions: %w", err)
-	}
-	history := make([]*SessionHistory, 0, len(sessions))
-	for _, session := range sessions {
-		messages, err := s.repo.GetMessages(session.ID)
-		if err != nil {
-			return nil, fmt.Errorf("get messages for session %s: %w", session.ID, err)
-		}
-		history = append(history, &SessionHistory{Session: session, Messages: messages})
-	}
-	return history, nil
-}
-
 func (s *service) GetMessages(userID, sessionID string) ([]*ChatMessage, error) {
 	if _, err := s.ensureSessionOwnership(userID, sessionID); err != nil {
 		return nil, err

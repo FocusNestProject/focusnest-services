@@ -24,12 +24,6 @@ type ChatMessage struct {
 	CreatedAt time.Time `json:"created_at" firestore:"created_at"`
 }
 
-// SessionHistory bundles a session and its ordered messages
-type SessionHistory struct {
-	Session  *ChatbotSession `json:"session"`
-	Messages []*ChatMessage  `json:"messages"`
-}
-
 var (
 	// ErrSessionNotFound signals that a session could not be located in storage
 	ErrSessionNotFound = errors.New("chat session not found")
@@ -60,7 +54,6 @@ type Service interface {
 	CreateSession(userID, title string) (*ChatbotSession, error)
 	GetSessions(userID string) ([]*ChatbotSession, error)
 	GetSession(userID, sessionID string) (*ChatbotSession, error)
-	GetHistory(userID string) ([]*SessionHistory, error)
 	GetMessages(userID, sessionID string) ([]*ChatMessage, error)
 	UpdateSessionTitle(userID, sessionID, title string) error
 	DeleteSession(userID, sessionID string) error

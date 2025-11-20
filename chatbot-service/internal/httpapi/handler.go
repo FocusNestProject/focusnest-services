@@ -1,8 +1,10 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -12,22 +14,23 @@ import (
 	"github.com/focusnest/chatbot-service/internal/chatbot"
 )
 
+const maxMessagesResponse = 200
+
 // RegisterRoutes registers all chatbot routes
-func RegisterRoutes(r chi.Router, service chatbot.Service) {
+func RegisterRoutes(r chi.Router, service chatbot.Service, logger *slog.Logger) {
 	r.Route("/v1/chatbot", func(r chi.Router) {
 		r.Use(middleware.Logger)
 		r.Use(middleware.Recoverer)
 
-		r.Get("/sessions", listSessions(service))
-		r.Get("/history", getHistory(service))
-		r.Get("/sessions/{sessionID}", getSession(service))
-		r.Patch("/sessions/{sessionID}", updateSessionTitle(service))
-		r.Delete("/sessions/{sessionID}", deleteSession(service))
-		r.Post("/ask", askQuestion(service))
+		r.Get("/sessions", listSessions(service, logger))
+		r.Get("/sessions/{sessionID}", getSession(service, logger))
+		r.Patch("/sessions/{sessionID}", updateSessionTitle(service, logger))
+		r.Delete("/sessions/{sessionID}", deleteSession(service, logger))
+		r.Post("/ask", askQuestion(service, logger))
 	})
 }
 
-func listSessions(service chatbot.Service) http.HandlerFunc {
+func listSessions(service chatbot.Service, logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		userID := headerUserID(r)
 		if userID == "" {
@@ -37,6 +40,7 @@ func listSessions(service chatbot.Service) http.HandlerFunc {
 
 		sessions, err := service.GetSessions(userID)
 		if err != nil {
+			logServiceError(r.Context(), logger, "listSessions", userID, err)
 			writeServiceError(w, err)
 			return
 		}
@@ -45,25 +49,7 @@ func listSessions(service chatbot.Service) http.HandlerFunc {
 	}
 }
 
-func getHistory(service chatbot.Service) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		userID := headerUserID(r)
-		if userID == "" {
-			writeError(w, http.StatusUnauthorized, "missing X-User-ID header")
-			return
-		}
-
-		history, err := service.GetHistory(userID)
-		if err != nil {
-			writeServiceError(w, err)
-			return
-		}
-
-		writeJSON(w, http.StatusOK, map[string]any{"sessions": history})
-	}
-}
-
-func getSession(service chatbot.Service) http.HandlerFunc {
+func getSession(service chatbot.Service, logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		userID := headerUserID(r)
 		if userID == "" {
@@ -78,14 +64,17 @@ func getSession(service chatbot.Service) http.HandlerFunc {
 
 		session, err := service.GetSession(userID, sessionID)
 		if err != nil {
+			logServiceError(r.Context(), logger, "getSession", userID, err, sessionID)
 			writeServiceError(w, err)
 			return
 		}
 		messages, err := service.GetMessages(userID, sessionID)
 		if err != nil {
+			logServiceError(r.Context(), logger, "getMessages", userID, err, sessionID)
 			writeServiceError(w, err)
 			return
 		}
+		messages = truncateMessages(messages, maxMessagesResponse)
 
 		writeJSON(w, http.StatusOK, map[string]any{
 			"session":  session,
@@ -94,7 +83,7 @@ func getSession(service chatbot.Service) http.HandlerFunc {
 	}
 }
 
-func askQuestion(service chatbot.Service) http.HandlerFunc {
+func askQuestion(service chatbot.Service, logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		userID := headerUserID(r)
 		if userID == "" {
@@ -114,12 +103,7 @@ func askQuestion(service chatbot.Service) http.HandlerFunc {
 
 		message, sessionID, err := service.AskQuestion(r.Context(), userID, req.SessionID, req.Question)
 		if err != nil {
-			writeServiceError(w, err)
-			return
-		}
-
-		messages, err := service.GetMessages(userID, sessionID)
-		if err != nil {
+			logServiceError(r.Context(), logger, "askQuestion", userID, err, req.SessionID)
 			writeServiceError(w, err)
 			return
 		}
@@ -127,12 +111,11 @@ func askQuestion(service chatbot.Service) http.HandlerFunc {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"session_id":        sessionID,
 			"assistant_message": message,
-			"messages":          messages,
 		})
 	}
 }
 
-func updateSessionTitle(service chatbot.Service) http.HandlerFunc {
+func updateSessionTitle(service chatbot.Service, logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		userID := headerUserID(r)
 		if userID == "" {
@@ -154,6 +137,7 @@ func updateSessionTitle(service chatbot.Service) http.HandlerFunc {
 		}
 
 		if err := service.UpdateSessionTitle(userID, sessionID, req.Title); err != nil {
+			logServiceError(r.Context(), logger, "updateSessionTitle", userID, err, sessionID)
 			writeServiceError(w, err)
 			return
 		}
@@ -162,7 +146,7 @@ func updateSessionTitle(service chatbot.Service) http.HandlerFunc {
 	}
 }
 
-func deleteSession(service chatbot.Service) http.HandlerFunc {
+func deleteSession(service chatbot.Service, logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		userID := headerUserID(r)
 		if userID == "" {
@@ -176,6 +160,7 @@ func deleteSession(service chatbot.Service) http.HandlerFunc {
 		}
 
 		if err := service.DeleteSession(userID, sessionID); err != nil {
+			logServiceError(r.Context(), logger, "deleteSession", userID, err, sessionID)
 			writeServiceError(w, err)
 			return
 		}
@@ -214,4 +199,29 @@ func writeServiceError(w http.ResponseWriter, err error) {
 	default:
 		writeError(w, http.StatusInternalServerError, "internal server error")
 	}
+}
+
+func logServiceError(ctx context.Context, logger *slog.Logger, operation, userID string, err error, sessionID ...string) {
+	if logger == nil || err == nil {
+		return
+	}
+	attrs := []any{
+		slog.String("operation", operation),
+		slog.String("userId", userID),
+		slog.Any("error", err),
+	}
+	if len(sessionID) > 0 && sessionID[0] != "" {
+		attrs = append(attrs, slog.String("sessionId", sessionID[0]))
+	}
+	if reqID := middleware.GetReqID(ctx); reqID != "" {
+		attrs = append(attrs, slog.String("requestId", reqID))
+	}
+	logger.Error("chatbot request failed", attrs...)
+}
+
+func truncateMessages(messages []*chatbot.ChatMessage, limit int) []*chatbot.ChatMessage {
+	if limit <= 0 || len(messages) <= limit {
+		return messages
+	}
+	return messages[len(messages)-limit:]
 }
