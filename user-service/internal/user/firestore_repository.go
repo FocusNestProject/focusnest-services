@@ -2,7 +2,6 @@ package user
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -14,9 +13,7 @@ import (
 )
 
 var (
-	// ErrProfileNotFound indicates that no profile document exists for the user.
-	ErrProfileNotFound = errors.New("profile not found")
-	profileLocation    = loadProfileLocation()
+	profileLocation = loadProfileLocation()
 )
 
 type firestoreRepository struct {
@@ -39,7 +36,7 @@ func loadProfileLocation() *time.Location {
 func (r *firestoreRepository) GetProfile(ctx context.Context, userID string) (*Profile, error) {
 	doc, err := r.client.Collection("profiles").Doc(userID).Get(ctx)
 	if status.Code(err) == codes.NotFound {
-		return nil, ErrProfileNotFound
+		return defaultProfile(userID), nil
 	}
 	if err != nil {
 		return nil, err

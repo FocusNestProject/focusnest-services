@@ -36,7 +36,7 @@ func (f *fakeRepo) GetProfileMetadata(ctx context.Context, userID string) (Profi
 func TestServiceGetProfile_DefaultsWhenMissing(t *testing.T) {
 	repo := &fakeRepo{
 		getProfileFn: func(ctx context.Context, userID string) (*Profile, error) {
-			return nil, ErrProfileNotFound
+			return defaultProfile(userID), nil
 		},
 		getProfileMetaFn: func(ctx context.Context, userID string) (ProfileMetadata, error) {
 			return ProfileMetadata{LongestStreak: 5, TotalSessions: 20}, nil

@@ -2,7 +2,6 @@ package user
 
 import (
 	"context"
-	"errors"
 
 	"golang.org/x/sync/errgroup"
 )
@@ -26,10 +25,6 @@ func (s *service) GetProfile(ctx context.Context, userID string) (*ProfileRespon
 
 	g.Go(func() error {
 		p, err := s.repo.GetProfile(ctx, userID)
-		if errors.Is(err, ErrProfileNotFound) {
-			profile = defaultProfile(userID)
-			return nil
-		}
 		if err != nil {
 			return err
 		}
