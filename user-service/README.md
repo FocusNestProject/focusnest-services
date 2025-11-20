@@ -2,7 +2,7 @@
 
 Manages authenticated profile data for the FocusNest ecosystem. Profiles are stored in Firestore under the `profiles/{userID}` document path and enriched at read time with derived productivity metadata.
 
-## API surface
+## API Surface
 
 All routes require a valid access token handled by the shared auth middleware. The HTTP handler also expects the upstream gateway to inject the `X-User-ID` header for the authenticated subject.
 
@@ -10,39 +10,46 @@ All routes require a valid access token handled by the shared auth middleware. T
 
 Returns the caller's profile and derived metadata. If a profile document has not been created yet, the service responds with default values (empty strings, `null` birthdate) while still calculating metadata counters based on the user's `productivities` sub-collection.
 
+**Response Body:**
+
 ```jsonc
 {
-  "user_id": "abc123",
-  "full_name": "Focus Nest",
-  "username": "focusnest",
-  "bio": "",
-  "birthdate": "1996-09-14",
-  "metadata": {
-    "longest_streak": 12,
-    "total_productivities": 48,
-    "total_sessions": 48
-  },
-  "created_at": "2025-11-19T09:10:11Z",
-  "updated_at": "2025-11-19T09:10:11Z"
+  "user_id": "string",
+  "bio": "string",
+  "birthdate": "string (ISO 8601) | null",
+  "longest_streak": "integer",
+  "total_productivities": "integer",
+  "total_sessions": "integer",
+  "created_at": "string (ISO 8601)",
+  "updated_at": "string (ISO 8601)"
 }
 ```
 
 ### `PATCH /v1/users/me`
 
-Allows partial profile updates. The payload may include any combination of `full_name`, `username`, `bio`, and `birthdate`. Fields are trimmed server-side; `birthdate` must be an ISO `YYYY-MM-DD` string or explicit `null` to clear the value. Requests larger than 64KB are rejected.
+Allows partial profile updates. The payload may include any combination of `bio` and `birthdate`. Display name and username remain the source of truth inside Clerk, so this service intentionally ignores those fields.
+
+**Request Body:**
+
+| Field       | Type               | Description                                                |
+| :---------- | :----------------- | :--------------------------------------------------------- |
+| `bio`       | `string`           | Optional. A short biography.                               |
+| `birthdate` | `string` \| `null` | Optional. Date in `YYYY-MM-DD` format, or `null` to clear. |
+
+**Example Request:**
 
 ```json
 {
-  "full_name": "Focus Nest",
-  "username": "focusnest",
   "bio": "building calm productivity",
   "birthdate": "1996-09-14"
 }
 ```
 
-The response mirrors the `GET` payload with the updated data and live metadata snapshot.
+**Response:**
 
-## Metadata derivation
+Returns the updated profile object (same structure as `GET /v1/users/me`).
+
+## Metadata Derivation
 
 Metadata fields are computed on each request to guarantee freshness:
 

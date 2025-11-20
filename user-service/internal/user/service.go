@@ -87,13 +87,11 @@ func defaultProfile(userID string) *Profile {
 
 func buildProfileResponse(profile *Profile, metadata ProfileMetadata) *ProfileResponse {
 	return &ProfileResponse{
-		UserID:    profile.UserID,
-		FullName:  profile.FullName,
-		Username:  profile.Username,
-		Bio:       profile.Bio,
-		Birthdate: profile.Birthdate,
-		Metadata:  metadata,
-		CreatedAt: profile.CreatedAt,
-		UpdatedAt: profile.UpdatedAt,
+		UserID:          profile.UserID,
+		Bio:             profile.Bio,
+		Birthdate:       profile.Birthdate,
+		ProfileMetadata: metadata,
+		CreatedAt:       profile.CreatedAt,
+		UpdatedAt:       profile.UpdatedAt,
 	}
 }

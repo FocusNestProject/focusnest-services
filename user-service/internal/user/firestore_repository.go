@@ -60,12 +60,6 @@ func (r *firestoreRepository) UpsertProfile(ctx context.Context, userID string, 
 			"updated_at": now,
 		}
 
-		if updates.FullName != nil {
-			data["full_name"] = strings.TrimSpace(*updates.FullName)
-		}
-		if updates.Username != nil {
-			data["username"] = strings.TrimSpace(*updates.Username)
-		}
 		if updates.Bio != nil {
 			data["bio"] = strings.TrimSpace(*updates.Bio)
 		}

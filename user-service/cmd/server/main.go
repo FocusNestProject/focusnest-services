@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"time"
 
 	"cloud.google.com/go/firestore"
@@ -29,7 +30,14 @@ func main() {
 	logger := logging.NewLogger("user-service")
 
 	// Initialize Firestore client
-	client, err := firestore.NewClient(ctx, cfg.GCPProjectID)
+	databaseID := "focusnest-prod"
+	if cfg.Firestore.EmulatorHost != "" {
+		if err := os.Setenv("FIRESTORE_EMULATOR_HOST", cfg.Firestore.EmulatorHost); err != nil {
+			panic(fmt.Errorf("set FIRESTORE_EMULATOR_HOST: %w", err))
+		}
+		databaseID = "(default)"
+	}
+	client, err := firestore.NewClientWithDatabase(ctx, cfg.GCPProjectID, databaseID)
 	if err != nil {
 		panic(fmt.Errorf("firestore client: %w", err))
 	}
@@ -54,7 +62,7 @@ func main() {
 			r.Use(sharedauth.Middleware(verifier))
 
 			// Register user routes
-			httpapi.RegisterRoutes(r, userService)
+			httpapi.RegisterRoutes(r, userService, logger)
 		})
 	})
 

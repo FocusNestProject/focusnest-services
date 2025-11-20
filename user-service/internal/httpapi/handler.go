@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -21,16 +22,16 @@ const (
 )
 
 // RegisterRoutes registers all user routes
-func RegisterRoutes(r chi.Router, service user.Service) {
+func RegisterRoutes(r chi.Router, service user.Service, logger *slog.Logger) {
 	r.Route("/v1/users", func(r chi.Router) {
 		r.Use(middleware.Recoverer)
 
-		r.Get("/me", getProfile(service))
-		r.Patch("/me", updateProfile(service))
+		r.Get("/me", getProfile(service, logger))
+		r.Patch("/me", updateProfile(service, logger))
 	})
 }
 
-func getProfile(service user.Service) http.HandlerFunc {
+func getProfile(service user.Service, logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		userID := headerUserID(r)
 		if userID == "" {
@@ -43,6 +44,7 @@ func getProfile(service user.Service) http.HandlerFunc {
 
 		profile, err := service.GetProfile(ctx, userID)
 		if err != nil {
+			logRequestError(r.Context(), logger, "failed to load profile", err, userID)
 			writeError(w, http.StatusInternalServerError, "failed to load profile")
 			return
 		}
@@ -51,7 +53,7 @@ func getProfile(service user.Service) http.HandlerFunc {
 	}
 }
 
-func updateProfile(service user.Service) http.HandlerFunc {
+func updateProfile(service user.Service, logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		userID := headerUserID(r)
 		if userID == "" {
@@ -81,6 +83,7 @@ func updateProfile(service user.Service) http.HandlerFunc {
 
 		profile, err := service.UpdateProfile(ctx, userID, payload)
 		if err != nil {
+			logRequestError(r.Context(), logger, "failed to update profile", err, userID)
 			writeError(w, http.StatusInternalServerError, "failed to update profile")
 			return
 		}
@@ -95,8 +98,6 @@ func decodePatchPayload(r *http.Request) (user.ProfileUpdateInput, error) {
 	var (
 		input user.ProfileUpdateInput
 		body  struct {
-			FullName  *string          `json:"full_name"`
-			Username  *string          `json:"username"`
 			Bio       *string          `json:"bio"`
 			Birthdate *json.RawMessage `json:"birthdate"`
 		}
@@ -114,12 +115,10 @@ func decodePatchPayload(r *http.Request) (user.ProfileUpdateInput, error) {
 	if err := decoder.Decode(&struct{}{}); err != io.EOF {
 		return input, errInvalidPayload
 	}
-	if body.FullName == nil && body.Username == nil && body.Bio == nil && body.Birthdate == nil {
+	if body.Bio == nil && body.Birthdate == nil {
 		return input, errInvalidPayload
 	}
 
-	input.FullName = body.FullName
-	input.Username = body.Username
 	input.Bio = body.Bio
 
 	if body.Birthdate != nil {
@@ -161,4 +160,18 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 
 func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, map[string]string{"error": message})
+}
+
+func logRequestError(ctx context.Context, logger *slog.Logger, message string, err error, userID string) {
+	if logger == nil || err == nil {
+		return
+	}
+	attrs := []any{
+		slog.String("userId", userID),
+		slog.Any("error", err),
+	}
+	if reqID := middleware.GetReqID(ctx); reqID != "" {
+		attrs = append(attrs, slog.String("requestId", reqID))
+	}
+	logger.Error(message, attrs...)
 }

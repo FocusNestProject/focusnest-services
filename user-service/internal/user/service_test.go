@@ -52,13 +52,13 @@ func TestServiceGetProfile_DefaultsWhenMissing(t *testing.T) {
 	if resp.UserID != "user-123" {
 		t.Fatalf("expected user id to be propagated")
 	}
-	if resp.Metadata.LongestStreak != 5 || resp.Metadata.TotalSessions != 20 {
-		t.Fatalf("metadata not propagated: %+v", resp.Metadata)
+	if resp.LongestStreak != 5 || resp.TotalSessions != 20 {
+		t.Fatalf("metadata not propagated: %+v", resp.ProfileMetadata)
 	}
 }
 
 func TestServiceUpdateProfile_ConcurrentFetches(t *testing.T) {
-	profile := &Profile{UserID: "user-abc", FullName: "Focus Nest"}
+	profile := &Profile{UserID: "user-abc", Bio: "Focus Nest"}
 	repo := &fakeRepo{
 		upsertProfileFn: func(ctx context.Context, userID string, updates ProfileUpdateInput) (*Profile, error) {
 			return profile, nil
@@ -74,10 +74,10 @@ func TestServiceUpdateProfile_ConcurrentFetches(t *testing.T) {
 		t.Fatalf("UpdateProfile returned error: %v", err)
 	}
 
-	if resp.FullName != profile.FullName {
+	if resp.Bio != profile.Bio {
 		t.Fatalf("expected profile fields to be preserved")
 	}
-	if resp.Metadata.TotalProductivities != 3 {
+	if resp.TotalProductivities != 3 {
 		t.Fatalf("expected metadata to be carried over")
 	}
 }

@@ -8,8 +8,6 @@ import (
 // Profile represents the persisted profile document stored in Firestore.
 type Profile struct {
 	UserID    string     `json:"user_id" firestore:"user_id"`
-	FullName  string     `json:"full_name" firestore:"full_name"`
-	Username  string     `json:"username" firestore:"username"`
 	Bio       string     `json:"bio" firestore:"bio"`
 	Birthdate *time.Time `json:"birthdate" firestore:"birthdate"`
 	CreatedAt time.Time  `json:"created_at" firestore:"created_at"`
@@ -25,20 +23,16 @@ type ProfileMetadata struct {
 
 // ProfileResponse combines persisted profile fields with derived metadata.
 type ProfileResponse struct {
-	UserID    string          `json:"user_id"`
-	FullName  string          `json:"full_name"`
-	Username  string          `json:"username"`
-	Bio       string          `json:"bio"`
-	Birthdate *time.Time      `json:"birthdate"`
-	Metadata  ProfileMetadata `json:"metadata"`
-	CreatedAt time.Time       `json:"created_at,omitempty"`
-	UpdatedAt time.Time       `json:"updated_at,omitempty"`
+	UserID    string     `json:"user_id"`
+	Bio       string     `json:"bio"`
+	Birthdate *time.Time `json:"birthdate"`
+	ProfileMetadata
+	CreatedAt time.Time `json:"created_at,omitempty"`
+	UpdatedAt time.Time `json:"updated_at,omitempty"`
 }
 
 // ProfileUpdateInput describes the allowed fields during a PATCH request.
 type ProfileUpdateInput struct {
-	FullName  *string
-	Username  *string
 	Bio       *string
 	Birthdate *BirthdatePatch
 }
