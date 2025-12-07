@@ -41,7 +41,7 @@ func NewGeminiAssistant(ctx context.Context, cfg AssistantConfig) (Assistant, er
 	}
 	maxTokens := cfg.MaxOutputTokens
 	if maxTokens <= 0 {
-		maxTokens = 512
+		maxTokens = 1024
 	}
 
 	clientCfg := &genai.ClientConfig{}
@@ -104,8 +104,8 @@ func (g *GeminiAssistant) Respond(ctx context.Context, lang string, prompt strin
 
 	resp, err := g.client.Models.GenerateContent(ctx, g.model, contents, &genai.GenerateContentConfig{
 		SystemInstruction: genai.NewContentFromText(systemPrompt(lang), genai.RoleUser),
-		Temperature:       genai.Ptr(float32(0.35)),
-		TopP:              genai.Ptr(float32(0.9)),
+		Temperature:       genai.Ptr(float32(0.75)),
+		TopP:              genai.Ptr(float32(0.95)),
 		MaxOutputTokens:   int32(g.maxTokens),
 	})
 	if err != nil {
@@ -142,11 +142,23 @@ func (t *TemplateAssistant) Respond(ctx context.Context, lang string, prompt str
 func (t *TemplateAssistant) Close() error { return nil }
 
 func systemPrompt(lang string) string {
-	base := `You are FocusNest, a calm productivity coach. Prioritize focus, deep work, habits, reflection, routines, study techniques, healthy rest, and motivation. If a user drifts off-topic, briefly acknowledge it and steer back with one friendly sentence plus a simple productivity tip (no hard refusals). Use prior chat context to stay consistent, stay kind, and avoid sensitive or harmful content. Keep replies short with 2-3 practical steps or bullets.`
+	base := `You are FocusNest, a warm and conversational productivity coach. Your role is to help users with focus, deep work, habits, routines, study techniques, healthy rest, and motivation.
+
+Key principles:
+- Be natural and conversational, not robotic or template-like
+- Pay close attention to the conversation history and reference specific things the user mentioned earlier
+- Adapt your tone and approach based on the user's mood and context from previous messages
+- If the user seems stressed, be empathetic. If they're excited, match their energy. If they're confused, be clear and patient
+- Reference specific details from earlier in the conversation to show you're listening
+- Keep responses concise but warm—aim for 2-4 sentences or a few bullet points, not rigid templates
+- If the topic drifts, gently acknowledge it and offer a brief productivity connection, but don't be dismissive
+- Use the conversation flow naturally—build on what was said before, ask follow-up questions when appropriate, and maintain continuity
+
+Remember: You're having a conversation, not delivering a script. Let the context guide your response style and content.`
 	if lang == languageIndonesian {
-		base += ` Jawab dalam Bahasa Indonesia santai namun profesional; tetap arahkan ke produktivitas, kebiasaan sehat, atau fokus ketika topiknya melenceng.`
+		base += ` Jawab dalam Bahasa Indonesia yang santai dan natural, seperti ngobrol dengan teman yang peduli. Gunakan konteks percakapan sebelumnya untuk membuat respons yang relevan dan personal.`
 	} else {
-		base += ` Reply in clear English.`
+		base += ` Reply in natural, conversational English that feels personal and context-aware.`
 	}
 	return base
 }

@@ -260,13 +260,13 @@ The chatbot keeps a complete history per user: every profile can open multiple s
 
 #### Gemini configuration
 
-| Variable                            | Required | Notes                                                                         |
-| ----------------------------------- | -------- | ----------------------------------------------------------------------------- |
+| Variable                            | Required | Notes                                                                                          |
+| ----------------------------------- | -------- | ---------------------------------------------------------------------------------------------- |
 | `GEMINI_API_KEY` / `GOOGLE_API_KEY` | Yes\*    | Provide one when `GOOGLE_GENAI_USE_VERTEXAI=false`. Default model: `gemini-2.0-pro-exp-02-05`. |
-| `GOOGLE_GENAI_USE_VERTEXAI`         | No       | Set `true` to route through Vertex AI. Defaults to `false`.                   |
-| `GOOGLE_CLOUD_LOCATION`             | Yes\*    | Required whenever `GOOGLE_GENAI_USE_VERTEXAI=true` (e.g., `asia-southeast2`). |
-| `GCP_PROJECT_ID`                    | Yes      | Shared requirement across services.                                           |
-| `GOOGLE_APPLICATION_CREDENTIALS`    | Yes\*    | Needed when using Vertex locally unless ADC already configured.               |
+| `GOOGLE_GENAI_USE_VERTEXAI`         | No       | Set `true` to route through Vertex AI. Defaults to `false`.                                    |
+| `GOOGLE_CLOUD_LOCATION`             | Yes\*    | Required whenever `GOOGLE_GENAI_USE_VERTEXAI=true` (e.g., `asia-southeast2`).                  |
+| `GCP_PROJECT_ID`                    | Yes      | Shared requirement across services.                                                            |
+| `GOOGLE_APPLICATION_CREDENTIALS`    | Yes\*    | Needed when using Vertex locally unless ADC already configured.                                |
 
 #### Endpoints
 

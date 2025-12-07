@@ -27,7 +27,7 @@ func NewService(repo Repository, assistant Assistant, contextWindow int) (Servic
 		assistant = NewTemplateAssistant()
 	}
 	if contextWindow <= 0 {
-		contextWindow = 16
+		contextWindow = 32
 	}
 	return &service{repo: repo, assistant: assistant, contextWindow: contextWindow}, nil
 }
@@ -101,6 +101,14 @@ func (s *service) AskQuestion(ctx context.Context, userID, sessionID, question s
 		return nil, "", err
 	}
 
+	// Get context before creating the new user message to avoid duplicates
+	contextMessages, err := s.repo.GetRecentMessages(session.ID, s.contextWindow)
+	if err != nil {
+		return nil, "", fmt.Errorf("load context: %w", err)
+	}
+
+	lang := detectLanguage(trimmed, contextMessages)
+
 	userMessage := &ChatMessage{
 		ID:        uuid.New().String(),
 		SessionID: session.ID,
@@ -111,13 +119,6 @@ func (s *service) AskQuestion(ctx context.Context, userID, sessionID, question s
 	if err := s.repo.CreateMessage(userMessage); err != nil {
 		return nil, "", fmt.Errorf("create user message: %w", err)
 	}
-
-	contextMessages, err := s.repo.GetRecentMessages(session.ID, s.contextWindow)
-	if err != nil {
-		return nil, "", fmt.Errorf("load context: %w", err)
-	}
-
-	lang := detectLanguage(trimmed, contextMessages)
 
 	responseText, err := s.assistant.Respond(ctx, lang, trimmed, contextMessages)
 	if err != nil {
