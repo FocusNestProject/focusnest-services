@@ -120,9 +120,24 @@ func (s *service) AskQuestion(ctx context.Context, userID, sessionID, question s
 		return nil, "", fmt.Errorf("create user message: %w", err)
 	}
 
+	// Try to get AI-generated response, with retry on failure
 	responseText, err := s.assistant.Respond(ctx, lang, trimmed, contextMessages)
 	if err != nil {
-		responseText = buildProductivityResponse(trimmed, contextMessages, lang)
+		// Retry once with a simpler context if first attempt fails
+		// Use only the last few messages for retry
+		simplifiedContext := contextMessages
+		if len(simplifiedContext) > 4 {
+			simplifiedContext = simplifiedContext[len(simplifiedContext)-4:]
+		}
+		responseText, err = s.assistant.Respond(ctx, lang, trimmed, simplifiedContext)
+		if err != nil {
+			// Last resort: return a simple, context-aware message without templates
+			if lang == languageIndonesian {
+				responseText = "Maaf, ada masalah teknis. Bisa coba lagi? Aku di sini untuk membantu dengan produktivitas dan fokus kamu."
+			} else {
+				responseText = "Sorry, I'm having a technical issue. Could you try again? I'm here to help with your productivity and focus."
+			}
+		}
 	}
 
 	assistantMessage := &ChatMessage{
