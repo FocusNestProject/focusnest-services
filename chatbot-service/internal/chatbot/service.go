@@ -118,14 +118,10 @@ func (s *service) AskQuestion(ctx context.Context, userID, sessionID, question s
 	}
 
 	lang := detectLanguage(trimmed, contextMessages)
-	var responseText string
-	if !isProductivityContext(trimmed, contextMessages) {
-		responseText = boundaryMessage(lang)
-	} else {
-		responseText, err = s.assistant.Respond(ctx, lang, trimmed, contextMessages)
-		if err != nil {
-			responseText = buildProductivityResponse(trimmed, contextMessages, lang)
-		}
+
+	responseText, err := s.assistant.Respond(ctx, lang, trimmed, contextMessages)
+	if err != nil {
+		responseText = buildProductivityResponse(trimmed, contextMessages, lang)
 	}
 
 	assistantMessage := &ChatMessage{
