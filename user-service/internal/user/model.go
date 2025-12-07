@@ -19,6 +19,7 @@ type ProfileMetadata struct {
 	LongestStreak       int `json:"longest_streak"`
 	TotalProductivities int `json:"total_productivities"`
 	TotalSessions       int `json:"total_sessions"`
+	TotalCycle          int `json:"total_cycle"`
 }
 
 // ProfileResponse combines persisted profile fields with derived metadata.

@@ -229,7 +229,8 @@ All streak endpoints return `days`, an ordered list with:
   "metadata": {
     "longest_streak": 12,
     "total_productivities": 48,
-    "total_sessions": 48
+    "total_sessions": 48,
+    "total_cycle": 180
   },
   "created_at": "2025-11-19T09:10:11Z",
   "updated_at": "2025-11-19T10:00:00Z"
@@ -248,6 +249,8 @@ If the profile does not exist yet, the service returns default values (blank str
 | `birthdate` | `YYYY-MM-DD` or `null` | Provide ISO date to set value or `null` to clear |
 
 Body must be JSON (max 64 KB). Unknown fields are rejected. Empty strings are allowed, but `username` uniqueness is enforced upstream.
+
+Metadata fields returned (read-only): `longest_streak`, `total_productivities`, `total_sessions`, and `total_cycle` (sum of `num_cycle` across all non-deleted productivities).
 
 ---
 
@@ -355,7 +358,8 @@ Looks at the trailing 30 days ending today.
   "metadata": {
     "longest_streak": 12,
     "total_productivities": 48,
-    "total_sessions": 48
+    "total_sessions": 48,
+    "total_cycle": 180
   },
   "created_at": "2025-11-19T09:10:11Z",
   "updated_at": "2025-11-19T10:00:00Z"

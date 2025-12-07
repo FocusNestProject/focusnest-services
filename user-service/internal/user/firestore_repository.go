@@ -85,7 +85,7 @@ func (r *firestoreRepository) UpsertProfile(ctx context.Context, userID string, 
 func (r *firestoreRepository) GetProfileMetadata(ctx context.Context, userID string) (ProfileMetadata, error) {
 	metrics := ProfileMetadata{}
 	query := r.productivitiesQuery(userID).
-		Select("start_time", "deleted").
+		Select("start_time", "deleted", "num_cycle").
 		OrderBy("start_time", firestore.Asc)
 	iter := query.Documents(ctx)
 	defer iter.Stop()
@@ -107,6 +107,7 @@ func (r *firestoreRepository) GetProfileMetadata(ctx context.Context, userID str
 		var snapshot struct {
 			StartTime time.Time `firestore:"start_time"`
 			Deleted   bool      `firestore:"deleted"`
+			NumCycle  int       `firestore:"num_cycle"`
 		}
 		if err := doc.DataTo(&snapshot); err != nil {
 			return metrics, fmt.Errorf("decode productivity snapshot: %w", err)
@@ -116,6 +117,7 @@ func (r *firestoreRepository) GetProfileMetadata(ctx context.Context, userID str
 		}
 		metrics.TotalProductivities++
 		metrics.TotalSessions++
+		metrics.TotalCycle += snapshot.NumCycle
 
 		if snapshot.StartTime.IsZero() {
 			continue
