@@ -262,7 +262,7 @@ The chatbot keeps a complete history per user: every profile can open multiple s
 
 | Variable                            | Required | Notes                                                                         |
 | ----------------------------------- | -------- | ----------------------------------------------------------------------------- |
-| `GEMINI_API_KEY` / `GOOGLE_API_KEY` | Yes\*    | Provide one when `GOOGLE_GENAI_USE_VERTEXAI=false`.                           |
+| `GEMINI_API_KEY` / `GOOGLE_API_KEY` | Yes\*    | Provide one when `GOOGLE_GENAI_USE_VERTEXAI=false`. Default model: `gemini-2.0-pro-exp-02-05`. |
 | `GOOGLE_GENAI_USE_VERTEXAI`         | No       | Set `true` to route through Vertex AI. Defaults to `false`.                   |
 | `GOOGLE_CLOUD_LOCATION`             | Yes\*    | Required whenever `GOOGLE_GENAI_USE_VERTEXAI=true` (e.g., `asia-southeast2`). |
 | `GCP_PROJECT_ID`                    | Yes      | Shared requirement across services.                                           |
