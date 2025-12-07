@@ -1,0 +1,15 @@
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    env:
+      - 'DOCKER_BUILDKIT=1'
+    args:
+      - 'build'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/chatbot-service'
+      - '-f'
+      - 'chatbot-service/Dockerfile'
+      - '.'
+images:
+  - 'gcr.io/$PROJECT_ID/chatbot-service'
+timeout: 600s
+

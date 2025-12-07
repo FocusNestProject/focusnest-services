@@ -38,7 +38,7 @@ type GeminiAssistant struct {
 func NewGeminiAssistant(ctx context.Context, cfg AssistantConfig) (Assistant, error) {
 	model := strings.TrimSpace(cfg.Model)
 	if model == "" {
-		model = "gemini-2.5-flash"
+		model = "gemini-2.0-flash-exp"
 	}
 	maxTokens := cfg.MaxOutputTokens
 	if maxTokens <= 0 {
@@ -115,7 +115,7 @@ func (g *GeminiAssistant) Respond(ctx context.Context, lang string, prompt strin
 		MaxOutputTokens:   int32(g.maxTokens),
 	})
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("gemini GenerateContent failed (model=%s): %w", g.model, err)
 	}
 	output := strings.TrimSpace(resp.Text())
 	if output == "" {
@@ -125,30 +125,26 @@ func (g *GeminiAssistant) Respond(ctx context.Context, lang string, prompt strin
 }
 
 // sanitizeInput removes potential prompt injection patterns from user input
+// This is a lightweight sanitization - the system prompt already has strong protections
 func sanitizeInput(input string) string {
-	// Remove common prompt injection patterns
 	sanitized := input
 	
-	// Remove attempts to override system instructions
+	// Only catch very specific, high-confidence injection patterns
+	// Be conservative to avoid breaking legitimate user messages
 	patterns := []string{
 		"ignore previous instructions",
 		"forget all previous",
 		"new instructions:",
-		"system:",
-		"assistant:",
-		"you are now",
-		"pretend you are",
-		"act as if",
-		"roleplay as",
-		"bypass",
-		"override",
+		"you are now a",
+		"pretend you are a",
+		"act as if you are",
+		"roleplay as a",
 	}
 	
 	lower := strings.ToLower(sanitized)
 	for _, pattern := range patterns {
 		if strings.Contains(lower, pattern) {
 			// Replace with neutral text using case-insensitive regex
-			// to maintain conversation flow but prevent injection
 			re := regexp.MustCompile(`(?i)` + regexp.QuoteMeta(pattern))
 			sanitized = re.ReplaceAllString(sanitized, "[redacted]")
 		}

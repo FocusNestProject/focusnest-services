@@ -132,6 +132,7 @@ func (s *service) AskQuestion(ctx context.Context, userID, sessionID, question s
 		responseText, err = s.assistant.Respond(ctx, lang, trimmed, simplifiedContext)
 		if err != nil {
 			// Last resort: return a simple, context-aware message without templates
+			// Note: Error details are logged by the handler, not exposed to user
 			if lang == languageIndonesian {
 				responseText = "Maaf, ada masalah teknis. Bisa coba lagi? Aku di sini untuk membantu dengan produktivitas dan fokus kamu."
 			} else {

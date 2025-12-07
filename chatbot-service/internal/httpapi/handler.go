@@ -103,6 +103,13 @@ func askQuestion(service chatbot.Service, logger *slog.Logger) http.HandlerFunc 
 
 		message, sessionID, err := service.AskQuestion(r.Context(), userID, req.SessionID, req.Question)
 		if err != nil {
+			// Log detailed error for debugging assistant issues
+			logger.Error("askQuestion failed",
+				slog.String("userId", userID),
+				slog.String("sessionId", req.SessionID),
+				slog.String("question", req.Question),
+				slog.Any("error", err),
+			)
 			logServiceError(r.Context(), logger, "askQuestion", userID, err, req.SessionID)
 			writeServiceError(w, err)
 			return
