@@ -3,6 +3,7 @@ package chatbot
 import (
 	"context"
 	"fmt"
+	"sort"
 	"time"
 
 	"cloud.google.com/go/firestore"
@@ -28,6 +29,8 @@ func (r *firestoreRepository) CreateSession(session *ChatbotSession) error {
 
 func (r *firestoreRepository) GetSessions(userID string) ([]*ChatbotSession, error) {
 	ctx := context.Background()
+	// Note: Firestore requires composite index for multiple orderBy fields
+	// For now, we'll sort pinned sessions in memory after fetching
 	iter := r.client.Collection("chat_sessions").
 		Where("user_id", "==", userID).
 		OrderBy("updated_at", firestore.Desc).
@@ -48,8 +51,26 @@ func (r *firestoreRepository) GetSessions(userID string) ([]*ChatbotSession, err
 			return nil, fmt.Errorf("unmarshal session: %w", err)
 		}
 		session.ID = doc.Ref.ID
+		// Default pinned to false if not set (for backward compatibility)
+		if pinnedVal, ok := doc.Data()["pinned"]; !ok {
+			session.Pinned = false
+		} else if pinned, ok := pinnedVal.(bool); ok {
+			session.Pinned = pinned
+		} else {
+			session.Pinned = false
+		}
 		sessions = append(sessions, &session)
 	}
+
+	// Sort: pinned sessions first, then by updated_at descending
+	// Backend already returns sessions sorted by updated_at desc, so we just need to move pinned to front
+	sort.Slice(sessions, func(i, j int) bool {
+		if sessions[i].Pinned != sessions[j].Pinned {
+			return sessions[i].Pinned // pinned sessions come first
+		}
+		// Within same pinned status, maintain updated_at order (already sorted desc)
+		return false
+	})
 
 	return sessions, nil
 }
@@ -117,6 +138,15 @@ func (r *firestoreRepository) UpdateSessionTitle(sessionID string, title string,
 	ctx := context.Background()
 	_, err := r.client.Collection("chat_sessions").Doc(sessionID).Update(ctx, []firestore.Update{
 		{Path: "title", Value: title},
+		{Path: "updated_at", Value: updatedAt},
+	})
+	return err
+}
+
+func (r *firestoreRepository) UpdateSessionPinned(sessionID string, pinned bool, updatedAt time.Time) error {
+	ctx := context.Background()
+	_, err := r.client.Collection("chat_sessions").Doc(sessionID).Update(ctx, []firestore.Update{
+		{Path: "pinned", Value: pinned},
 		{Path: "updated_at", Value: updatedAt},
 	})
 	return err

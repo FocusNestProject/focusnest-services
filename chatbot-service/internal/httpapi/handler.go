@@ -25,6 +25,8 @@ func RegisterRoutes(r chi.Router, service chatbot.Service, logger *slog.Logger) 
 		r.Get("/sessions", listSessions(service, logger))
 		r.Get("/sessions/{sessionID}", getSession(service, logger))
 		r.Patch("/sessions/{sessionID}", updateSessionTitle(service, logger))
+		r.Patch("/sessions/{sessionID}/pin", updateSessionPinned(service, logger, true))
+		r.Patch("/sessions/{sessionID}/unpin", updateSessionPinned(service, logger, false))
 		r.Delete("/sessions/{sessionID}", deleteSession(service, logger))
 		r.Post("/ask", askQuestion(service, logger))
 	})
@@ -150,6 +152,29 @@ func updateSessionTitle(service chatbot.Service, logger *slog.Logger) http.Handl
 		}
 
 		writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
+	}
+}
+
+func updateSessionPinned(service chatbot.Service, logger *slog.Logger, pinned bool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID := headerUserID(r)
+		if userID == "" {
+			writeError(w, http.StatusUnauthorized, "missing X-User-ID header")
+			return
+		}
+		sessionID := strings.TrimSpace(chi.URLParam(r, "sessionID"))
+		if sessionID == "" {
+			writeError(w, http.StatusBadRequest, "session ID required")
+			return
+		}
+
+		if err := service.UpdateSessionPinned(userID, sessionID, pinned); err != nil {
+			logServiceError(r.Context(), logger, "updateSessionPinned", userID, err, sessionID)
+			writeServiceError(w, err)
+			return
+		}
+
+		writeJSON(w, http.StatusOK, map[string]any{"pinned": pinned})
 	}
 }
 

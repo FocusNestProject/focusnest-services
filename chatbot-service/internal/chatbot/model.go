@@ -11,6 +11,7 @@ type ChatbotSession struct {
 	ID        string    `json:"id" firestore:"id"`
 	UserID    string    `json:"user_id" firestore:"user_id"`
 	Title     string    `json:"title" firestore:"title"`
+	Pinned    bool      `json:"pinned" firestore:"pinned"`
 	CreatedAt time.Time `json:"created_at" firestore:"created_at"`
 	UpdatedAt time.Time `json:"updated_at" firestore:"updated_at"`
 }
@@ -44,6 +45,7 @@ type Repository interface {
 	GetMessages(sessionID string) ([]*ChatMessage, error)
 	UpdateSessionTimestamp(sessionID string, updatedAt time.Time) error
 	UpdateSessionTitle(sessionID string, title string, updatedAt time.Time) error
+	UpdateSessionPinned(sessionID string, pinned bool, updatedAt time.Time) error
 	DeleteSession(sessionID string) error
 	DeleteMessages(sessionID string) error
 	GetRecentMessages(sessionID string, limit int) ([]*ChatMessage, error)
@@ -56,6 +58,7 @@ type Service interface {
 	GetSession(userID, sessionID string) (*ChatbotSession, error)
 	GetMessages(userID, sessionID string) ([]*ChatMessage, error)
 	UpdateSessionTitle(userID, sessionID, title string) error
+	UpdateSessionPinned(userID, sessionID string, pinned bool) error
 	DeleteSession(userID, sessionID string) error
 	AskQuestion(ctx context.Context, userID, sessionID, question string) (*ChatMessage, string, error)
 }

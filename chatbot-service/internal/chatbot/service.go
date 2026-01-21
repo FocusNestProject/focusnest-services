@@ -42,6 +42,7 @@ func (s *service) CreateSession(userID, title string) (*ChatbotSession, error) {
 		ID:        uuid.New().String(),
 		UserID:    userID,
 		Title:     trimmedTitle,
+		Pinned:    false,
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
@@ -75,6 +76,13 @@ func (s *service) UpdateSessionTitle(userID, sessionID, title string) error {
 		return ErrEmptyTitle
 	}
 	return s.repo.UpdateSessionTitle(sessionID, trimmed, time.Now().UTC())
+}
+
+func (s *service) UpdateSessionPinned(userID, sessionID string, pinned bool) error {
+	if _, err := s.ensureSessionOwnership(userID, sessionID); err != nil {
+		return err
+	}
+	return s.repo.UpdateSessionPinned(sessionID, pinned, time.Now().UTC())
 }
 
 func (s *service) DeleteSession(userID, sessionID string) error {
