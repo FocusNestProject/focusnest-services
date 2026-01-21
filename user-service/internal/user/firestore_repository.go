@@ -85,7 +85,7 @@ func (r *firestoreRepository) UpsertProfile(ctx context.Context, userID string, 
 func (r *firestoreRepository) GetProfileMetadata(ctx context.Context, userID string) (ProfileMetadata, error) {
 	metrics := ProfileMetadata{}
 	query := r.productivitiesQuery(userID).
-		Select("start_time", "deleted", "num_cycle").
+		Select("start_time", "deleted", "num_cycle", "category").
 		OrderBy("start_time", firestore.Asc)
 	iter := query.Documents(ctx)
 	defer iter.Stop()
@@ -94,6 +94,9 @@ func (r *firestoreRepository) GetProfileMetadata(ctx context.Context, userID str
 	var lastProcessedDay time.Time
 	current := 0
 	longest := 0
+	
+	// Track unique categories for TotalProductivities
+	uniqueCategories := make(map[string]bool)
 
 	for {
 		doc, err := iter.Next()
@@ -108,6 +111,7 @@ func (r *firestoreRepository) GetProfileMetadata(ctx context.Context, userID str
 			StartTime time.Time `firestore:"start_time"`
 			Deleted   bool      `firestore:"deleted"`
 			NumCycle  int       `firestore:"num_cycle"`
+			Category  string    `firestore:"category"`
 		}
 		if err := doc.DataTo(&snapshot); err != nil {
 			return metrics, fmt.Errorf("decode productivity snapshot: %w", err)
@@ -115,7 +119,14 @@ func (r *firestoreRepository) GetProfileMetadata(ctx context.Context, userID str
 		if snapshot.Deleted {
 			continue
 		}
-		metrics.TotalProductivities++
+		
+		// Track unique categories (only count non-empty categories)
+		// Trim and check category - empty string means field doesn't exist or is empty
+		category := strings.TrimSpace(snapshot.Category)
+		if category != "" {
+			uniqueCategories[category] = true
+		}
+		
 		metrics.TotalSessions++
 		metrics.TotalCycle += snapshot.NumCycle
 
@@ -142,6 +153,8 @@ func (r *firestoreRepository) GetProfileMetadata(ctx context.Context, userID str
 		lastProcessedDay = day
 	}
 
+	// Set TotalProductivities to count of unique categories
+	metrics.TotalProductivities = len(uniqueCategories)
 	metrics.LongestStreak = longest
 	return metrics, nil
 }
