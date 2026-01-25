@@ -81,6 +81,11 @@ func tokenFromRequest(r *http.Request) (string, error) {
 		return userID, nil
 	}
 
+	// Check for X-Clerk-Token header (bypasses Google Frontend Bearer token validation)
+	if clerkToken := r.Header.Get("X-Clerk-Token"); clerkToken != "" {
+		return clerkToken, nil
+	}
+
 	// Fall back to Authorization Bearer token
 	header := r.Header.Get("Authorization")
 	if header == "" {
