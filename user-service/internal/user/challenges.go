@@ -7,11 +7,36 @@ func challengeDefinitions() []ChallengeDefinition {
 		{
 			ID:               "focus_2h_3days",
 			Title:            "Fokus 2 jam selama 3 hari",
-			Description:      "Fokus minimal 2 jam sehari selama 3 hari berturut-turut",
+			Description:      "Fokus minimal 2 jam tanpa distraksi selama 3 hari berturut-turut",
 			RewardPoints:     50,
 			RuleType:         ChallengeRuleDailyMinutesStreak,
 			MinMinutesPerDay: 120,
 			ConsecutiveDays:  3,
+		},
+		{
+			ID:           "share_recap_3x_weekly",
+			Title:        "Bagikan Recap Mingguan",
+			Description:  "Bagikan recap hasil fokusmu 3 kali dalam seminggu",
+			RewardPoints: 50,
+			RuleType:     ChallengeRuleWeeklyShares,
+			TargetCount:  3,
+		},
+		{
+			ID:           "streak_10_days",
+			Title:        "Raih 10 Hari Streak",
+			Description:  "Raih 10 hari streak dan unggah recap ke media sosial",
+			RewardPoints: 50,
+			RuleType:     ChallengeRuleStreakMilestone,
+			TargetStreak: 10,
+		},
+		{
+			ID:                       "cycles_and_mindfulness",
+			Title:                    "Fokus & Mindfulness",
+			Description:              "Selesaikan 4 cycle kerja dan lakukan 2 menit mindfulness breathing",
+			RewardPoints:             50,
+			RuleType:                 ChallengeRuleCyclesAndMindfulness,
+			TargetCycles:             4,
+			TargetMindfulnessMinutes: 2,
 		},
 	}
 }

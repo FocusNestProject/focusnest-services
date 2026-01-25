@@ -8,12 +8,18 @@ import (
 )
 
 type fakeRepo struct {
-	getProfileFn     func(context.Context, string) (*Profile, error)
-	upsertProfileFn  func(context.Context, string, ProfileUpdateInput) (*Profile, error)
-	getProfileMetaFn func(context.Context, string) (ProfileMetadata, error)
-	getDailyMinutesByDateFn func(context.Context, string, time.Time, time.Time) (map[string]int, error)
-	isChallengeClaimedFn    func(context.Context, string, string) (bool, error)
-	claimChallengeFn        func(context.Context, string, string, int) (int, time.Time, bool, error)
+	getProfileFn                 func(context.Context, string) (*Profile, error)
+	upsertProfileFn              func(context.Context, string, ProfileUpdateInput) (*Profile, error)
+	getProfileMetaFn             func(context.Context, string) (ProfileMetadata, error)
+	getDailyMinutesByDateFn      func(context.Context, string, time.Time, time.Time) (map[string]int, error)
+	isChallengeClaimedFn         func(context.Context, string, string) (bool, error)
+	claimChallengeFn             func(context.Context, string, string, int) (int, time.Time, bool, error)
+	getWeeklyShareCountFn        func(context.Context, string, time.Time) (int, error)
+	recordShareFn                func(context.Context, string, string) error
+	getCurrentStreakFn           func(context.Context, string) (int, error)
+	getTotalCyclesFn             func(context.Context, string) (int, error)
+	getTotalMindfulnessMinutesFn func(context.Context, string) (int, error)
+	recordMindfulnessFn          func(context.Context, string, int) error
 }
 
 func (f *fakeRepo) GetProfile(ctx context.Context, userID string) (*Profile, error) {
@@ -56,6 +62,48 @@ func (f *fakeRepo) ClaimChallenge(ctx context.Context, userID, challengeID strin
 		return f.claimChallengeFn(ctx, userID, challengeID, points)
 	}
 	return 0, time.Time{}, false, errors.New("claimChallengeFn not provided")
+}
+
+func (f *fakeRepo) GetWeeklyShareCount(ctx context.Context, userID string, weekStart time.Time) (int, error) {
+	if f.getWeeklyShareCountFn != nil {
+		return f.getWeeklyShareCountFn(ctx, userID, weekStart)
+	}
+	return 0, nil
+}
+
+func (f *fakeRepo) RecordShare(ctx context.Context, userID string, shareType string) error {
+	if f.recordShareFn != nil {
+		return f.recordShareFn(ctx, userID, shareType)
+	}
+	return nil
+}
+
+func (f *fakeRepo) GetCurrentStreak(ctx context.Context, userID string) (int, error) {
+	if f.getCurrentStreakFn != nil {
+		return f.getCurrentStreakFn(ctx, userID)
+	}
+	return 0, nil
+}
+
+func (f *fakeRepo) GetTotalCycles(ctx context.Context, userID string) (int, error) {
+	if f.getTotalCyclesFn != nil {
+		return f.getTotalCyclesFn(ctx, userID)
+	}
+	return 0, nil
+}
+
+func (f *fakeRepo) GetTotalMindfulnessMinutes(ctx context.Context, userID string) (int, error) {
+	if f.getTotalMindfulnessMinutesFn != nil {
+		return f.getTotalMindfulnessMinutesFn(ctx, userID)
+	}
+	return 0, nil
+}
+
+func (f *fakeRepo) RecordMindfulness(ctx context.Context, userID string, minutes int) error {
+	if f.recordMindfulnessFn != nil {
+		return f.recordMindfulnessFn(ctx, userID, minutes)
+	}
+	return nil
 }
 
 func TestServiceGetProfile_DefaultsWhenMissing(t *testing.T) {

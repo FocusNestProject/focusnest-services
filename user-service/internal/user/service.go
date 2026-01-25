@@ -118,27 +118,64 @@ func (s *service) GetChallengesMe(ctx context.Context, userID string) (*Challeng
 		return nil, err
 	}
 
+	// Get week start (Monday) for weekly challenges
+	weekStart := getWeekStart(today)
+
 	defs := challengeDefinitions()
 	statuses := make([]ChallengeStatus, 0, len(defs))
 	for _, def := range defs {
+		var progress ChallengeProgress
+		var completed bool
+
 		switch def.RuleType {
 		case ChallengeRuleDailyMinutesStreak:
-			progress := computeDailyMinutesStreakProgress(def, minsByDate, today)
-			claimed, err := s.repo.IsChallengeClaimed(ctx, userID, def.ID)
+			progress = computeDailyMinutesStreakProgress(def, minsByDate, today)
+			completed = progress.CurrentStreakDays >= def.ConsecutiveDays
+
+		case ChallengeRuleWeeklyShares:
+			shareCount, err := s.repo.GetWeeklyShareCount(ctx, userID, weekStart)
 			if err != nil {
 				return nil, err
 			}
-			completed := progress.CurrentStreakDays >= def.ConsecutiveDays
-			statuses = append(statuses, ChallengeStatus{
-				Challenge: def,
-				Progress:  progress,
-				Completed: completed,
-				Claimed:   claimed,
-			})
+			progress = computeWeeklySharesProgress(def, shareCount)
+			completed = shareCount >= def.TargetCount
+
+		case ChallengeRuleStreakMilestone:
+			currentStreak, err := s.repo.GetCurrentStreak(ctx, userID)
+			if err != nil {
+				return nil, err
+			}
+			progress = computeStreakMilestoneProgress(def, currentStreak)
+			completed = currentStreak >= def.TargetStreak
+
+		case ChallengeRuleCyclesAndMindfulness:
+			totalCycles, err := s.repo.GetTotalCycles(ctx, userID)
+			if err != nil {
+				return nil, err
+			}
+			mindfulnessMinutes, err := s.repo.GetTotalMindfulnessMinutes(ctx, userID)
+			if err != nil {
+				return nil, err
+			}
+			progress = computeCyclesAndMindfulnessProgress(def, totalCycles, mindfulnessMinutes)
+			completed = totalCycles >= def.TargetCycles && mindfulnessMinutes >= def.TargetMindfulnessMinutes
+
 		default:
 			// Unknown challenge type; ignore for now.
 			continue
 		}
+
+		claimed, err := s.repo.IsChallengeClaimed(ctx, userID, def.ID)
+		if err != nil {
+			return nil, err
+		}
+
+		statuses = append(statuses, ChallengeStatus{
+			Challenge: def,
+			Progress:  progress,
+			Completed: completed,
+			Claimed:   claimed,
+		})
 	}
 
 	return &ChallengesMeResponse{
@@ -176,29 +213,60 @@ func (s *service) ClaimChallenge(ctx context.Context, userID, challengeID string
 	}
 	now := time.Now().In(loc)
 	today := truncateToDay(now)
-	start := today.AddDate(0, 0, -45)
-	end := today.AddDate(0, 0, 1)
-	minsByDate, err := s.repo.GetDailyMinutesByDate(ctx, userID, start, end)
-	if err != nil {
-		return nil, err
-	}
+
+	eligible := false
 
 	switch def.RuleType {
 	case ChallengeRuleDailyMinutesStreak:
-		progress := computeDailyMinutesStreakProgress(*def, minsByDate, today)
-		if progress.CurrentStreakDays < def.ConsecutiveDays {
-			// Not eligible yet; return current points for UI.
-			profile, _ := s.repo.GetProfile(ctx, userID)
-			return &ClaimChallengeResponse{
-				ChallengeID:   challengeID,
-				Claimed:       false,
-				AlreadyClaimed: false,
-				PointsAwarded: 0,
-				PointsTotal:   func() int { if profile != nil { return profile.PointsTotal }; return 0 }(),
-			}, nil
+		start := today.AddDate(0, 0, -45)
+		end := today.AddDate(0, 0, 1)
+		minsByDate, err := s.repo.GetDailyMinutesByDate(ctx, userID, start, end)
+		if err != nil {
+			return nil, err
 		}
+		progress := computeDailyMinutesStreakProgress(*def, minsByDate, today)
+		eligible = progress.CurrentStreakDays >= def.ConsecutiveDays
+
+	case ChallengeRuleWeeklyShares:
+		weekStart := getWeekStart(today)
+		shareCount, err := s.repo.GetWeeklyShareCount(ctx, userID, weekStart)
+		if err != nil {
+			return nil, err
+		}
+		eligible = shareCount >= def.TargetCount
+
+	case ChallengeRuleStreakMilestone:
+		currentStreak, err := s.repo.GetCurrentStreak(ctx, userID)
+		if err != nil {
+			return nil, err
+		}
+		eligible = currentStreak >= def.TargetStreak
+
+	case ChallengeRuleCyclesAndMindfulness:
+		totalCycles, err := s.repo.GetTotalCycles(ctx, userID)
+		if err != nil {
+			return nil, err
+		}
+		mindfulnessMinutes, err := s.repo.GetTotalMindfulnessMinutes(ctx, userID)
+		if err != nil {
+			return nil, err
+		}
+		eligible = totalCycles >= def.TargetCycles && mindfulnessMinutes >= def.TargetMindfulnessMinutes
+
 	default:
 		return nil, fmt.Errorf("unsupported challenge type")
+	}
+
+	if !eligible {
+		// Not eligible yet; return current points for UI.
+		profile, _ := s.repo.GetProfile(ctx, userID)
+		return &ClaimChallengeResponse{
+			ChallengeID:    challengeID,
+			Claimed:        false,
+			AlreadyClaimed: false,
+			PointsAwarded:  0,
+			PointsTotal:    func() int { if profile != nil { return profile.PointsTotal }; return 0 }(),
+		}, nil
 	}
 
 	newTotal, claimedAt, already, err := s.repo.ClaimChallenge(ctx, userID, challengeID, def.RewardPoints)
@@ -207,11 +275,11 @@ func (s *service) ClaimChallenge(ctx context.Context, userID, challengeID string
 	}
 
 	resp := &ClaimChallengeResponse{
-		ChallengeID:   challengeID,
-		Claimed:       !already,
+		ChallengeID:    challengeID,
+		Claimed:        !already,
 		AlreadyClaimed: already,
-		PointsAwarded: 0,
-		PointsTotal:   newTotal,
+		PointsAwarded:  0,
+		PointsTotal:    newTotal,
 	}
 	if already {
 		resp.PointsAwarded = 0
@@ -261,11 +329,87 @@ func computeDailyMinutesStreakProgress(def ChallengeDefinition, minsByDate map[s
 	}
 
 	minsToday := minsByDate[today.Format("2006-01-02")]
+	percent := (streak * 100) / targetDays
+	if percent > 100 {
+		percent = 100
+	}
 
 	return ChallengeProgress{
 		CurrentStreakDays: streak,
 		TargetStreakDays:  targetDays,
 		MinMinutesPerDay:  minPerDay,
 		MinutesToday:      minsToday,
+		ProgressPercent:   percent,
+	}
+}
+
+func computeWeeklySharesProgress(def ChallengeDefinition, shareCount int) ChallengeProgress {
+	target := def.TargetCount
+	percent := (shareCount * 100) / target
+	if percent > 100 {
+		percent = 100
+	}
+
+	return ChallengeProgress{
+		CurrentCount:    shareCount,
+		TargetCount:     target,
+		ProgressPercent: percent,
+	}
+}
+
+func computeStreakMilestoneProgress(def ChallengeDefinition, currentStreak int) ChallengeProgress {
+	target := def.TargetStreak
+	percent := (currentStreak * 100) / target
+	if percent > 100 {
+		percent = 100
+	}
+
+	return ChallengeProgress{
+		CurrentStreak:   currentStreak,
+		TargetStreak:    target,
+		ProgressPercent: percent,
+	}
+}
+
+// getWeekStart returns the Monday of the week containing the given date.
+func getWeekStart(t time.Time) time.Time {
+	weekday := int(t.Weekday())
+	if weekday == 0 {
+		weekday = 7 // Sunday becomes 7
+	}
+	// Monday is day 1, so subtract (weekday - 1) days
+	return truncateToDay(t.AddDate(0, 0, -(weekday - 1)))
+}
+
+func computeCyclesAndMindfulnessProgress(def ChallengeDefinition, currentCycles, currentMindfulness int) ChallengeProgress {
+	targetCycles := def.TargetCycles
+	targetMindfulness := def.TargetMindfulnessMinutes
+
+	// Calculate combined progress (average of both)
+	cyclePercent := 0
+	if targetCycles > 0 {
+		cyclePercent = (currentCycles * 100) / targetCycles
+		if cyclePercent > 100 {
+			cyclePercent = 100
+		}
+	}
+
+	mindfulnessPercent := 0
+	if targetMindfulness > 0 {
+		mindfulnessPercent = (currentMindfulness * 100) / targetMindfulness
+		if mindfulnessPercent > 100 {
+			mindfulnessPercent = 100
+		}
+	}
+
+	// Overall progress is the average of both components
+	percent := (cyclePercent + mindfulnessPercent) / 2
+
+	return ChallengeProgress{
+		CurrentCycles:             currentCycles,
+		TargetCycles:              targetCycles,
+		CurrentMindfulnessMinutes: currentMindfulness,
+		TargetMindfulnessMinutes:  targetMindfulness,
+		ProgressPercent:           percent,
 	}
 }

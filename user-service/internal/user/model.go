@@ -34,7 +34,10 @@ type Badge struct {
 type ChallengeRuleType string
 
 const (
-	ChallengeRuleDailyMinutesStreak ChallengeRuleType = "daily_minutes_streak"
+	ChallengeRuleDailyMinutesStreak    ChallengeRuleType = "daily_minutes_streak"
+	ChallengeRuleWeeklyShares          ChallengeRuleType = "weekly_shares"
+	ChallengeRuleStreakMilestone       ChallengeRuleType = "streak_milestone"
+	ChallengeRuleCyclesAndMindfulness  ChallengeRuleType = "cycles_and_mindfulness"
 )
 
 // ChallengeDefinition is a static challenge template.
@@ -48,14 +51,42 @@ type ChallengeDefinition struct {
 	// Rule params (interpreted based on RuleType)
 	MinMinutesPerDay int `json:"min_minutes_per_day,omitempty"`
 	ConsecutiveDays  int `json:"consecutive_days,omitempty"`
+
+	// For count-based challenges (e.g., weekly shares)
+	TargetCount int `json:"target_count,omitempty"`
+
+	// For streak milestone challenges
+	TargetStreak int `json:"target_streak,omitempty"`
+
+	// For cycles and mindfulness challenge
+	TargetCycles            int `json:"target_cycles,omitempty"`
+	TargetMindfulnessMinutes int `json:"target_mindfulness_minutes,omitempty"`
 }
 
 // ChallengeProgress captures computed progress for a challenge.
 type ChallengeProgress struct {
-	CurrentStreakDays int `json:"current_streak_days"`
-	TargetStreakDays  int `json:"target_streak_days"`
-	MinMinutesPerDay  int `json:"min_minutes_per_day"`
-	MinutesToday      int `json:"minutes_today"`
+	// For daily minutes streak challenges
+	CurrentStreakDays int `json:"current_streak_days,omitempty"`
+	TargetStreakDays  int `json:"target_streak_days,omitempty"`
+	MinMinutesPerDay  int `json:"min_minutes_per_day,omitempty"`
+	MinutesToday      int `json:"minutes_today,omitempty"`
+
+	// For count-based challenges (shares, etc.)
+	CurrentCount int `json:"current_count,omitempty"`
+	TargetCount  int `json:"target_count,omitempty"`
+
+	// For streak milestone challenges
+	CurrentStreak int `json:"current_streak,omitempty"`
+	TargetStreak  int `json:"target_streak,omitempty"`
+
+	// For cycles and mindfulness challenge
+	CurrentCycles            int `json:"current_cycles,omitempty"`
+	TargetCycles             int `json:"target_cycles,omitempty"`
+	CurrentMindfulnessMinutes int `json:"current_mindfulness_minutes,omitempty"`
+	TargetMindfulnessMinutes  int `json:"target_mindfulness_minutes,omitempty"`
+
+	// Generic progress percentage (0-100) for UI
+	ProgressPercent int `json:"progress_percent"`
 }
 
 // ChallengeStatus is the per-user state for a challenge.
@@ -114,6 +145,18 @@ type Repository interface {
 	GetDailyMinutesByDate(ctx context.Context, userID string, startDate, endDate time.Time) (map[string]int, error)
 	IsChallengeClaimed(ctx context.Context, userID, challengeID string) (bool, error)
 	ClaimChallenge(ctx context.Context, userID, challengeID string, points int) (newTotal int, claimedAt time.Time, alreadyClaimed bool, err error)
+
+	// For weekly shares challenge
+	GetWeeklyShareCount(ctx context.Context, userID string, weekStart time.Time) (int, error)
+	RecordShare(ctx context.Context, userID string, shareType string) error
+
+	// For streak milestone challenge
+	GetCurrentStreak(ctx context.Context, userID string) (int, error)
+
+	// For cycles and mindfulness challenge
+	GetTotalCycles(ctx context.Context, userID string) (int, error)
+	GetTotalMindfulnessMinutes(ctx context.Context, userID string) (int, error)
+	RecordMindfulness(ctx context.Context, userID string, minutes int) error
 }
 
 // Service defines the user service interface.
