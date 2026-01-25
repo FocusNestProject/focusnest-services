@@ -1,6 +1,8 @@
-# Compiled binaries
-server
-*/server
+# Compiled binaries (only at specific locations, not cmd/server source dirs)
+/server
+/*/server
+!/*/cmd/server
+!/*/cmd/server/**
 bin/
 dist/
 
