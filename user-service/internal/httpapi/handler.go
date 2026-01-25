@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -29,6 +30,76 @@ func RegisterRoutes(r chi.Router, service user.Service, logger *slog.Logger) {
 		r.Get("/me", getProfile(service, logger))
 		r.Patch("/me", updateProfile(service, logger))
 	})
+
+	r.Route("/v1/challenges", func(r chi.Router) {
+		r.Use(middleware.Recoverer)
+
+		r.Get("/", listChallenges(service, logger))
+		r.Get("/me", getChallengesMe(service, logger))
+		r.Post("/{id}/claim", claimChallenge(service, logger))
+	})
+}
+
+func listChallenges(service user.Service, logger *slog.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), serviceTimeout)
+		defer cancel()
+
+		defs, err := service.ListChallenges(ctx)
+		if err != nil {
+			logRequestError(r.Context(), logger, "failed to list challenges", err, "")
+			writeError(w, http.StatusInternalServerError, "failed to list challenges")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"challenges": defs})
+	}
+}
+
+func getChallengesMe(service user.Service, logger *slog.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID := headerUserID(r)
+		if userID == "" {
+			writeError(w, http.StatusUnauthorized, "missing user ID")
+			return
+		}
+
+		ctx, cancel := context.WithTimeout(r.Context(), serviceTimeout)
+		defer cancel()
+
+		resp, err := service.GetChallengesMe(ctx, userID)
+		if err != nil {
+			logRequestError(r.Context(), logger, "failed to load challenges me", err, userID)
+			writeError(w, http.StatusInternalServerError, "failed to load challenges")
+			return
+		}
+		writeJSON(w, http.StatusOK, resp)
+	}
+}
+
+func claimChallenge(service user.Service, logger *slog.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID := headerUserID(r)
+		if userID == "" {
+			writeError(w, http.StatusUnauthorized, "missing user ID")
+			return
+		}
+		challengeID := chi.URLParam(r, "id")
+		if strings.TrimSpace(challengeID) == "" {
+			writeError(w, http.StatusBadRequest, "missing challenge id")
+			return
+		}
+
+		ctx, cancel := context.WithTimeout(r.Context(), serviceTimeout)
+		defer cancel()
+
+		resp, err := service.ClaimChallenge(ctx, userID, challengeID)
+		if err != nil {
+			logRequestError(r.Context(), logger, "failed to claim challenge", err, userID)
+			writeError(w, http.StatusInternalServerError, "failed to claim challenge")
+			return
+		}
+		writeJSON(w, http.StatusOK, resp)
+	}
 }
 
 func getProfile(service user.Service, logger *slog.Logger) http.HandlerFunc {

@@ -2,6 +2,8 @@ package user
 
 import (
 	"context"
+	"fmt"
+	"time"
 
 	"golang.org/x/sync/errgroup"
 )
@@ -81,6 +83,145 @@ func (s *service) UpdateProfile(ctx context.Context, userID string, updates Prof
 	return buildProfileResponse(updated, metadata), nil
 }
 
+func (s *service) ListChallenges(_ context.Context) ([]ChallengeDefinition, error) {
+	// Static for now; returning a copy keeps callers from mutating.
+	defs := challengeDefinitions()
+	out := make([]ChallengeDefinition, len(defs))
+	copy(out, defs)
+	return out, nil
+}
+
+func (s *service) GetChallengesMe(ctx context.Context, userID string) (*ChallengesMeResponse, error) {
+	if userID == "" {
+		return nil, fmt.Errorf("missing user id")
+	}
+
+	profile, err := s.repo.GetProfile(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	loc, err := time.LoadLocation("Asia/Jakarta")
+	if err != nil {
+		loc = time.UTC
+	}
+	now := time.Now().In(loc)
+	today := truncateToDay(now)
+
+	// Look back enough days to compute streaks safely.
+	// For now 45 days is more than enough for the current challenge set.
+	start := today.AddDate(0, 0, -45)
+	end := today.AddDate(0, 0, 1) // [start, end)
+
+	minsByDate, err := s.repo.GetDailyMinutesByDate(ctx, userID, start, end)
+	if err != nil {
+		return nil, err
+	}
+
+	defs := challengeDefinitions()
+	statuses := make([]ChallengeStatus, 0, len(defs))
+	for _, def := range defs {
+		switch def.RuleType {
+		case ChallengeRuleDailyMinutesStreak:
+			progress := computeDailyMinutesStreakProgress(def, minsByDate, today)
+			claimed, err := s.repo.IsChallengeClaimed(ctx, userID, def.ID)
+			if err != nil {
+				return nil, err
+			}
+			completed := progress.CurrentStreakDays >= def.ConsecutiveDays
+			statuses = append(statuses, ChallengeStatus{
+				Challenge: def,
+				Progress:  progress,
+				Completed: completed,
+				Claimed:   claimed,
+			})
+		default:
+			// Unknown challenge type; ignore for now.
+			continue
+		}
+	}
+
+	return &ChallengesMeResponse{
+		PointsTotal: profile.PointsTotal,
+		Badges:      badgesForPoints(profile.PointsTotal),
+		Challenges:  statuses,
+	}, nil
+}
+
+func (s *service) ClaimChallenge(ctx context.Context, userID, challengeID string) (*ClaimChallengeResponse, error) {
+	if userID == "" {
+		return nil, fmt.Errorf("missing user id")
+	}
+	if challengeID == "" {
+		return nil, fmt.Errorf("missing challenge id")
+	}
+
+	// Validate challenge exists and fetch its definition.
+	var def *ChallengeDefinition
+	for _, c := range challengeDefinitions() {
+		if c.ID == challengeID {
+			copy := c
+			def = &copy
+			break
+		}
+	}
+	if def == nil {
+		return nil, fmt.Errorf("unknown challenge")
+	}
+
+	// Ensure it is completed before awarding points.
+	loc, err := time.LoadLocation("Asia/Jakarta")
+	if err != nil {
+		loc = time.UTC
+	}
+	now := time.Now().In(loc)
+	today := truncateToDay(now)
+	start := today.AddDate(0, 0, -45)
+	end := today.AddDate(0, 0, 1)
+	minsByDate, err := s.repo.GetDailyMinutesByDate(ctx, userID, start, end)
+	if err != nil {
+		return nil, err
+	}
+
+	switch def.RuleType {
+	case ChallengeRuleDailyMinutesStreak:
+		progress := computeDailyMinutesStreakProgress(*def, minsByDate, today)
+		if progress.CurrentStreakDays < def.ConsecutiveDays {
+			// Not eligible yet; return current points for UI.
+			profile, _ := s.repo.GetProfile(ctx, userID)
+			return &ClaimChallengeResponse{
+				ChallengeID:   challengeID,
+				Claimed:       false,
+				AlreadyClaimed: false,
+				PointsAwarded: 0,
+				PointsTotal:   func() int { if profile != nil { return profile.PointsTotal }; return 0 }(),
+			}, nil
+		}
+	default:
+		return nil, fmt.Errorf("unsupported challenge type")
+	}
+
+	newTotal, claimedAt, already, err := s.repo.ClaimChallenge(ctx, userID, challengeID, def.RewardPoints)
+	if err != nil {
+		return nil, err
+	}
+
+	resp := &ClaimChallengeResponse{
+		ChallengeID:   challengeID,
+		Claimed:       !already,
+		AlreadyClaimed: already,
+		PointsAwarded: 0,
+		PointsTotal:   newTotal,
+	}
+	if already {
+		resp.PointsAwarded = 0
+	} else {
+		resp.PointsAwarded = def.RewardPoints
+		resp.ClaimedAt = claimedAt
+	}
+	return resp, nil
+}
+
 func defaultProfile(userID string) *Profile {
 	return &Profile{UserID: userID}
 }
@@ -90,8 +231,41 @@ func buildProfileResponse(profile *Profile, metadata ProfileMetadata) *ProfileRe
 		UserID:          profile.UserID,
 		Bio:             profile.Bio,
 		Birthdate:       profile.Birthdate,
+		PointsTotal:     profile.PointsTotal,
 		ProfileMetadata: metadata,
 		CreatedAt:       profile.CreatedAt,
 		UpdatedAt:       profile.UpdatedAt,
+	}
+}
+
+func truncateToDay(t time.Time) time.Time {
+	y, m, d := t.Date()
+	return time.Date(y, m, d, 0, 0, 0, 0, t.Location())
+}
+
+func computeDailyMinutesStreakProgress(def ChallengeDefinition, minsByDate map[string]int, today time.Time) ChallengeProgress {
+	minPerDay := def.MinMinutesPerDay
+	targetDays := def.ConsecutiveDays
+
+	// Current streak ending today (in local time).
+	streak := 0
+	for i := 0; i < 90; i++ { // safety cap
+		day := today.AddDate(0, 0, -i)
+		key := day.Format("2006-01-02")
+		mins := minsByDate[key]
+		if mins >= minPerDay {
+			streak++
+			continue
+		}
+		break
+	}
+
+	minsToday := minsByDate[today.Format("2006-01-02")]
+
+	return ChallengeProgress{
+		CurrentStreakDays: streak,
+		TargetStreakDays:  targetDays,
+		MinMinutesPerDay:  minPerDay,
+		MinutesToday:      minsToday,
 	}
 }

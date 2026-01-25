@@ -252,6 +252,12 @@ Body must be JSON (max 64 KB). Unknown fields are rejected. Empty strings are al
 
 Metadata fields returned (read-only): `longest_streak`, `total_productivities`, `total_sessions`, and `total_cycle` (sum of `num_cycle` across all non-deleted productivities).
 
+#### Challenges & points — `/v1/challenges/*`
+
+- `GET /v1/challenges` — Lists available challenges (static definitions).
+- `GET /v1/challenges/me` — Returns challenge progress, `points_total`, and badges unlocked by points.
+- `POST /v1/challenges/{id}/claim` — Claims the fixed reward (currently 50 points) once per challenge (idempotent).
+
 ---
 
 ### Chatbot Service — `/v1/chatbot`

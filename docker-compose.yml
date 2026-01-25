@@ -9,7 +9,8 @@ services:
     ports:
       - "8088:8080"
     healthcheck:
-      test: ["CMD", "bash", "-lc", "nc -z localhost 8080"]
+      # cloud-sdk image doesn't ship with netcat; use bash TCP check.
+      test: ["CMD", "bash", "-lc", "cat < /dev/null > /dev/tcp/localhost/8080"]
       interval: 5s
       timeout: 2s
       retries: 20
@@ -25,6 +26,8 @@ services:
       DATASTORE: "firestore"
       GCP_PROJECT_ID: "focusnest-dev"
       FIRESTORE_EMULATOR_HOST: "firebase-emulator:8080"
+      # Required by focus-service config validation (even in local dev).
+      FOCUS_STORAGE_BUCKET: "focusnest-dev-local"
     depends_on:
       firebase-emulator:
         condition: service_healthy
@@ -40,6 +43,9 @@ services:
       PORT: "8080"
       GCP_PROJECT_ID: "focusnest-dev"
       FIRESTORE_EMULATOR_HOST: "firebase-emulator:8080"
+      # Required unless GOOGLE_GENAI_USE_VERTEXAI=true.
+      # Safe for local runs as long as you don't call chatbot endpoints.
+      GEMINI_API_KEY: "dev-placeholder"
     depends_on:
       firebase-emulator:
         condition: service_healthy
@@ -68,6 +74,7 @@ services:
       dockerfile: user-service/Dockerfile
     environment:
       PORT: "8080"
+      AUTH_MODE: "noop"
       GCP_PROJECT_ID: "focusnest-dev"
       FIRESTORE_EMULATOR_HOST: "firebase-emulator:8080"
     depends_on:
@@ -83,6 +90,7 @@ services:
       dockerfile: gateway-api/Dockerfile
     environment:
       PORT: "8080"
+      AUTH_MODE: "noop"
       # Clerk (put these in your .env for dev)
       CLERK_JWKS_URL: "${CLERK_JWKS_URL}"
       CLERK_AUDIENCE: "${CLERK_AUDIENCE}"

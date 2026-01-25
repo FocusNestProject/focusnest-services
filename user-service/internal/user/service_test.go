@@ -4,12 +4,16 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 )
 
 type fakeRepo struct {
 	getProfileFn     func(context.Context, string) (*Profile, error)
 	upsertProfileFn  func(context.Context, string, ProfileUpdateInput) (*Profile, error)
 	getProfileMetaFn func(context.Context, string) (ProfileMetadata, error)
+	getDailyMinutesByDateFn func(context.Context, string, time.Time, time.Time) (map[string]int, error)
+	isChallengeClaimedFn    func(context.Context, string, string) (bool, error)
+	claimChallengeFn        func(context.Context, string, string, int) (int, time.Time, bool, error)
 }
 
 func (f *fakeRepo) GetProfile(ctx context.Context, userID string) (*Profile, error) {
@@ -31,6 +35,27 @@ func (f *fakeRepo) GetProfileMetadata(ctx context.Context, userID string) (Profi
 		return f.getProfileMetaFn(ctx, userID)
 	}
 	return ProfileMetadata{}, errors.New("getProfileMetaFn not provided")
+}
+
+func (f *fakeRepo) GetDailyMinutesByDate(ctx context.Context, userID string, startDate, endDate time.Time) (map[string]int, error) {
+	if f.getDailyMinutesByDateFn != nil {
+		return f.getDailyMinutesByDateFn(ctx, userID, startDate, endDate)
+	}
+	return map[string]int{}, nil
+}
+
+func (f *fakeRepo) IsChallengeClaimed(ctx context.Context, userID, challengeID string) (bool, error) {
+	if f.isChallengeClaimedFn != nil {
+		return f.isChallengeClaimedFn(ctx, userID, challengeID)
+	}
+	return false, nil
+}
+
+func (f *fakeRepo) ClaimChallenge(ctx context.Context, userID, challengeID string, points int) (int, time.Time, bool, error) {
+	if f.claimChallengeFn != nil {
+		return f.claimChallengeFn(ctx, userID, challengeID, points)
+	}
+	return 0, time.Time{}, false, errors.New("claimChallengeFn not provided")
 }
 
 func TestServiceGetProfile_DefaultsWhenMissing(t *testing.T) {
