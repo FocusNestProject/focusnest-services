@@ -48,6 +48,8 @@ func Router(verifier auth.Verifier, targets Targets, logger *slog.Logger) http.H
 		r.Mount("/v1/chatbot", proxyHandler(targets.Chatbot, logger))
 		r.Mount("/v1/users", proxyHandler(targets.User, logger))
 		r.Mount("/v1/challenges", proxyHandler(targets.User, logger))
+		r.Mount("/v1/shares", proxyHandler(targets.User, logger))
+		r.Mount("/v1/mindfulness", proxyHandler(targets.User, logger))
 	})
 
 	return r

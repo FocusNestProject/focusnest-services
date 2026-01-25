@@ -166,4 +166,6 @@ type Service interface {
 	ListChallenges(ctx context.Context) ([]ChallengeDefinition, error)
 	GetChallengesMe(ctx context.Context, userID string) (*ChallengesMeResponse, error)
 	ClaimChallenge(ctx context.Context, userID, challengeID string) (*ClaimChallengeResponse, error)
+	RecordShare(ctx context.Context, userID string, shareType string) error
+	RecordMindfulness(ctx context.Context, userID string, minutes int) error
 }

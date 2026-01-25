@@ -290,6 +290,26 @@ func (s *service) ClaimChallenge(ctx context.Context, userID, challengeID string
 	return resp, nil
 }
 
+func (s *service) RecordShare(ctx context.Context, userID string, shareType string) error {
+	if userID == "" {
+		return fmt.Errorf("missing user id")
+	}
+	if shareType == "" {
+		shareType = "recap" // default share type
+	}
+	return s.repo.RecordShare(ctx, userID, shareType)
+}
+
+func (s *service) RecordMindfulness(ctx context.Context, userID string, minutes int) error {
+	if userID == "" {
+		return fmt.Errorf("missing user id")
+	}
+	if minutes <= 0 {
+		return fmt.Errorf("minutes must be positive")
+	}
+	return s.repo.RecordMindfulness(ctx, userID, minutes)
+}
+
 func defaultProfile(userID string) *Profile {
 	return &Profile{UserID: userID}
 }

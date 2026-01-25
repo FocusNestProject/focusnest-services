@@ -38,6 +38,16 @@ func RegisterRoutes(r chi.Router, service user.Service, logger *slog.Logger) {
 		r.Get("/me", getChallengesMe(service, logger))
 		r.Post("/{id}/claim", claimChallenge(service, logger))
 	})
+
+	r.Route("/v1/shares", func(r chi.Router) {
+		r.Use(middleware.Recoverer)
+		r.Post("/", recordShare(service, logger))
+	})
+
+	r.Route("/v1/mindfulness", func(r chi.Router) {
+		r.Use(middleware.Recoverer)
+		r.Post("/", recordMindfulness(service, logger))
+	})
 }
 
 func listChallenges(service user.Service, logger *slog.Logger) http.HandlerFunc {
@@ -99,6 +109,66 @@ func claimChallenge(service user.Service, logger *slog.Logger) http.HandlerFunc 
 			return
 		}
 		writeJSON(w, http.StatusOK, resp)
+	}
+}
+
+func recordShare(service user.Service, logger *slog.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID := headerUserID(r)
+		if userID == "" {
+			writeError(w, http.StatusUnauthorized, "missing user ID")
+			return
+		}
+
+		var body struct {
+			ShareType string `json:"share_type"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid request body")
+			return
+		}
+
+		ctx, cancel := context.WithTimeout(r.Context(), serviceTimeout)
+		defer cancel()
+
+		if err := service.RecordShare(ctx, userID, body.ShareType); err != nil {
+			logRequestError(r.Context(), logger, "failed to record share", err, userID)
+			writeError(w, http.StatusInternalServerError, "failed to record share")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]bool{"success": true})
+	}
+}
+
+func recordMindfulness(service user.Service, logger *slog.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID := headerUserID(r)
+		if userID == "" {
+			writeError(w, http.StatusUnauthorized, "missing user ID")
+			return
+		}
+
+		var body struct {
+			Minutes int `json:"minutes"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid request body")
+			return
+		}
+		if body.Minutes <= 0 {
+			writeError(w, http.StatusBadRequest, "minutes must be positive")
+			return
+		}
+
+		ctx, cancel := context.WithTimeout(r.Context(), serviceTimeout)
+		defer cancel()
+
+		if err := service.RecordMindfulness(ctx, userID, body.Minutes); err != nil {
+			logRequestError(r.Context(), logger, "failed to record mindfulness", err, userID)
+			writeError(w, http.StatusInternalServerError, "failed to record mindfulness")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]bool{"success": true})
 	}
 }
 
