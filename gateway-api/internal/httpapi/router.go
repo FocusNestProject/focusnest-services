@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"net/http/httputil"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"google.golang.org/api/idtoken"
 
 	"github.com/focusnest/shared-libs/auth"
 )
@@ -69,12 +71,34 @@ func proxyHandler(target *url.URL, logger *slog.Logger) http.Handler {
 		})
 	}
 
+	// Create ID token source for service-to-service authentication
+	audience := target.Scheme + "://" + target.Host
+	tokenSource, err := idtoken.NewTokenSource(context.Background(), audience)
+	if err != nil {
+		if logger != nil {
+			logger.Error("failed to create token source", slog.Any("error", err), slog.String("audience", audience))
+		}
+		// Continue without token source - will fail if backend requires auth
+	}
+
 	proxy := httputil.NewSingleHostReverseProxy(target)
 	origDirector := proxy.Director
 	proxy.Director = func(req *http.Request) {
 		origDirector(req)
 		// Ensure the upstream sees the right Host and preserve original path.
 		req.Host = target.Host
+		
+		// Add ID token for service-to-service authentication
+		if tokenSource != nil {
+			token, err := tokenSource.Token()
+			if err != nil {
+				if logger != nil {
+					logger.Error("failed to get ID token", slog.Any("error", err))
+				}
+			} else {
+				req.Header.Set("Authorization", "Bearer "+token.AccessToken)
+			}
+		}
 	}
 
 	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
