@@ -4,80 +4,115 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"strings"
 
 	"github.com/focusnest/gateway-api/internal/config"
 	"github.com/focusnest/gateway-api/internal/httpapi"
 	"github.com/focusnest/shared-libs/auth"
-	"github.com/focusnest/shared-libs/envconfig"
-	"github.com/focusnest/shared-libs/logging"
 )
 
 func main() {
-	cfg := mustLoad()
-	logger := logging.NewLogger("gateway-api")
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	slog.SetDefault(logger)
 
+	cfg, err := loadConfig()
+	if err != nil {
+		logger.Error("failed to load config", slog.Any("error", err))
+		os.Exit(1)
+	}
+
+	logger.Info("starting gateway-api",
+		slog.String("port", cfg.Port),
+		slog.String("auth_mode", cfg.AuthMode),
+	)
+
+	// Initialize auth verifier
 	verifier, err := auth.NewVerifier(auth.Config{
-		Mode:     auth.Mode(strings.ToLower(strings.TrimSpace(cfg.AuthMode))),
+		Mode:     auth.Mode(cfg.AuthMode),
 		JWKSURL:  cfg.ClerkJWKSURL,
 		Audience: cfg.ClerkAudience,
 		Issuer:   cfg.ClerkIssuer,
 	})
 	if err != nil {
-		logger.Error("failed to init auth verifier", slog.Any("error", err))
+		logger.Error("failed to initialize auth verifier", slog.Any("error", err))
 		os.Exit(1)
 	}
 
-	handler := httpapi.Router(verifier, httpapi.Targets{
+	logger.Info("auth verifier initialized",
+		slog.String("mode", cfg.AuthMode),
+		slog.String("jwks_url", cfg.ClerkJWKSURL),
+		slog.String("issuer", cfg.ClerkIssuer),
+	)
+
+	// Setup proxy targets
+	targets := httpapi.Targets{
 		Activity:  cfg.ActivityURL,
 		User:      cfg.UserURL,
 		Analytics: cfg.AnalyticsURL,
 		Chatbot:   cfg.ChatbotURL,
-	}, logger)
+	}
+
+	router := httpapi.Router(verifier, targets, logger)
 
 	addr := ":" + cfg.Port
-	logger.Info("gateway starting", slog.String("addr", addr))
-	if err := http.ListenAndServe(addr, handler); err != nil {
-		logger.Error("gateway crashed", slog.Any("error", err))
+	logger.Info("listening", slog.String("addr", addr))
+
+	if err := http.ListenAndServe(addr, router); err != nil {
+		logger.Error("server error", slog.Any("error", err))
 		os.Exit(1)
 	}
 }
 
-func mustLoad() config.Config {
-	port := envconfig.Get("PORT", "8080")
-	authMode := envconfig.Get("AUTH_MODE", "clerk")
-
-	activityRaw := envconfig.Get("ACTIVITY_URL", envconfig.Get("FOCUS_URL", ""))
-	userRaw := envconfig.Get("USER_URL", "")
-	analyticsRaw := envconfig.Get("ANALYTICS_URL", envconfig.Get("PROGRESS_URL", ""))
-	chatbotRaw := envconfig.Get("CHATBOT_URL", "")
-
-	activityURL, err := config.ParseURLCompat(activityRaw)
-	if err != nil {
-		panic("ACTIVITY_URL invalid: " + err.Error())
-	}
-	userURL, err := config.ParseURLCompat(userRaw)
-	if err != nil {
-		panic("USER_URL invalid: " + err.Error())
-	}
-	analyticsURL, err := config.ParseURLCompat(analyticsRaw)
-	if err != nil {
-		panic("ANALYTICS_URL invalid: " + err.Error())
-	}
-	chatbotURL, err := config.ParseURLCompat(chatbotRaw)
-	if err != nil {
-		panic("CHATBOT_URL invalid: " + err.Error())
+func loadConfig() (*config.Config, error) {
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
 	}
 
-	return config.Config{
+	authMode := os.Getenv("AUTH_MODE")
+	if authMode == "" {
+		authMode = "clerk" // default to clerk in production
+	}
+
+	cfg := &config.Config{
 		Port:          port,
 		AuthMode:      authMode,
-		ClerkJWKSURL:  envconfig.Get("CLERK_JWKS_URL", ""),
-		ClerkAudience: envconfig.Get("CLERK_AUDIENCE", ""),
-		ClerkIssuer:   envconfig.Get("CLERK_ISSUER", ""),
-		ActivityURL:   activityURL,
-		UserURL:       userURL,
-		AnalyticsURL:  analyticsURL,
-		ChatbotURL:    chatbotURL,
+		ClerkJWKSURL:  os.Getenv("CLERK_JWKS_URL"),
+		ClerkAudience: os.Getenv("CLERK_AUDIENCE"),
+		ClerkIssuer:   os.Getenv("CLERK_ISSUER"),
 	}
+
+	// Parse upstream service URLs
+	if activityURL := os.Getenv("ACTIVITY_URL"); activityURL != "" {
+		u, err := config.ParseURLCompat(activityURL)
+		if err != nil {
+			return nil, err
+		}
+		cfg.ActivityURL = u
+	}
+
+	if userURL := os.Getenv("USER_URL"); userURL != "" {
+		u, err := config.ParseURLCompat(userURL)
+		if err != nil {
+			return nil, err
+		}
+		cfg.UserURL = u
+	}
+
+	if analyticsURL := os.Getenv("ANALYTICS_URL"); analyticsURL != "" {
+		u, err := config.ParseURLCompat(analyticsURL)
+		if err != nil {
+			return nil, err
+		}
+		cfg.AnalyticsURL = u
+	}
+
+	if chatbotURL := os.Getenv("CHATBOT_URL"); chatbotURL != "" {
+		u, err := config.ParseURLCompat(chatbotURL)
+		if err != nil {
+			return nil, err
+		}
+		cfg.ChatbotURL = u
+	}
+
+	return cfg, nil
 }
