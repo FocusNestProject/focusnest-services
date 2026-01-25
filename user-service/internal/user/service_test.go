@@ -85,14 +85,14 @@ func (f *fakeRepo) GetCurrentStreak(ctx context.Context, userID string) (int, er
 	return 0, nil
 }
 
-func (f *fakeRepo) GetTotalCycles(ctx context.Context, userID string) (int, error) {
+func (f *fakeRepo) GetTodayCycles(ctx context.Context, userID string) (int, error) {
 	if f.getTotalCyclesFn != nil {
 		return f.getTotalCyclesFn(ctx, userID)
 	}
 	return 0, nil
 }
 
-func (f *fakeRepo) GetTotalMindfulnessMinutes(ctx context.Context, userID string) (int, error) {
+func (f *fakeRepo) GetTodayMindfulnessMinutes(ctx context.Context, userID string) (int, error) {
 	if f.getTotalMindfulnessMinutesFn != nil {
 		return f.getTotalMindfulnessMinutesFn(ctx, userID)
 	}

@@ -149,16 +149,17 @@ func (s *service) GetChallengesMe(ctx context.Context, userID string) (*Challeng
 			completed = currentStreak >= def.TargetStreak
 
 		case ChallengeRuleCyclesAndMindfulness:
-			totalCycles, err := s.repo.GetTotalCycles(ctx, userID)
+			// Get today's cycles and mindfulness minutes (challenge resets daily)
+			todayCycles, err := s.repo.GetTodayCycles(ctx, userID)
 			if err != nil {
 				return nil, err
 			}
-			mindfulnessMinutes, err := s.repo.GetTotalMindfulnessMinutes(ctx, userID)
+			todayMindfulnessMinutes, err := s.repo.GetTodayMindfulnessMinutes(ctx, userID)
 			if err != nil {
 				return nil, err
 			}
-			progress = computeCyclesAndMindfulnessProgress(def, totalCycles, mindfulnessMinutes)
-			completed = totalCycles >= def.TargetCycles && mindfulnessMinutes >= def.TargetMindfulnessMinutes
+			progress = computeCyclesAndMindfulnessProgress(def, todayCycles, todayMindfulnessMinutes)
+			completed = todayCycles >= def.TargetCycles && todayMindfulnessMinutes >= def.TargetMindfulnessMinutes
 
 		default:
 			// Unknown challenge type; ignore for now.
@@ -243,15 +244,16 @@ func (s *service) ClaimChallenge(ctx context.Context, userID, challengeID string
 		eligible = currentStreak >= def.TargetStreak
 
 	case ChallengeRuleCyclesAndMindfulness:
-		totalCycles, err := s.repo.GetTotalCycles(ctx, userID)
+		// Get today's cycles and mindfulness minutes (challenge resets daily)
+		todayCycles, err := s.repo.GetTodayCycles(ctx, userID)
 		if err != nil {
 			return nil, err
 		}
-		mindfulnessMinutes, err := s.repo.GetTotalMindfulnessMinutes(ctx, userID)
+		todayMindfulnessMinutes, err := s.repo.GetTodayMindfulnessMinutes(ctx, userID)
 		if err != nil {
 			return nil, err
 		}
-		eligible = totalCycles >= def.TargetCycles && mindfulnessMinutes >= def.TargetMindfulnessMinutes
+		eligible = todayCycles >= def.TargetCycles && todayMindfulnessMinutes >= def.TargetMindfulnessMinutes
 
 	default:
 		return nil, fmt.Errorf("unsupported challenge type")

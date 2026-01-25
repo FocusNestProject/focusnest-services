@@ -478,14 +478,21 @@ func (r *firestoreRepository) GetCurrentStreak(ctx context.Context, userID strin
 	return streak, nil
 }
 
-// GetTotalCycles returns the total number of work cycles completed by the user.
-func (r *firestoreRepository) GetTotalCycles(ctx context.Context, userID string) (int, error) {
+// GetTodayCycles returns the total number of work cycles completed by the user today.
+func (r *firestoreRepository) GetTodayCycles(ctx context.Context, userID string) (int, error) {
 	if userID == "" {
 		return 0, nil
 	}
 
+	// Get start and end of today in user's timezone (Asia/Jakarta)
+	now := time.Now().In(profileLocation)
+	startOfDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, profileLocation)
+	endOfDay := startOfDay.Add(24 * time.Hour)
+
 	query := r.productivitiesQuery(userID).
-		Select("num_cycle", "deleted")
+		Where("start_time", ">=", startOfDay).
+		Where("start_time", "<", endOfDay).
+		Select("num_cycle", "deleted", "start_time")
 	iter := query.Documents(ctx)
 	defer iter.Stop()
 
@@ -500,8 +507,9 @@ func (r *firestoreRepository) GetTotalCycles(ctx context.Context, userID string)
 		}
 
 		var snapshot struct {
-			NumCycle int  `firestore:"num_cycle"`
-			Deleted  bool `firestore:"deleted"`
+			NumCycle  int       `firestore:"num_cycle"`
+			Deleted   bool      `firestore:"deleted"`
+			StartTime time.Time `firestore:"start_time"`
 		}
 		if err := doc.DataTo(&snapshot); err != nil {
 			continue
@@ -515,13 +523,20 @@ func (r *firestoreRepository) GetTotalCycles(ctx context.Context, userID string)
 	return totalCycles, nil
 }
 
-// GetTotalMindfulnessMinutes returns the total mindfulness minutes for the user.
-func (r *firestoreRepository) GetTotalMindfulnessMinutes(ctx context.Context, userID string) (int, error) {
+// GetTodayMindfulnessMinutes returns the total mindfulness minutes for the user today.
+func (r *firestoreRepository) GetTodayMindfulnessMinutes(ctx context.Context, userID string) (int, error) {
 	if userID == "" {
 		return 0, nil
 	}
 
+	// Get start and end of today in user's timezone (Asia/Jakarta)
+	now := time.Now().In(profileLocation)
+	startOfDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, profileLocation)
+	endOfDay := startOfDay.Add(24 * time.Hour)
+
 	iter := r.client.Collection("profiles").Doc(userID).Collection("mindfulness").
+		Where("completed_at", ">=", startOfDay).
+		Where("completed_at", "<", endOfDay).
 		Documents(ctx)
 	defer iter.Stop()
 
@@ -536,7 +551,8 @@ func (r *firestoreRepository) GetTotalMindfulnessMinutes(ctx context.Context, us
 		}
 
 		var snapshot struct {
-			Minutes int `firestore:"minutes"`
+			Minutes     int       `firestore:"minutes"`
+			CompletedAt time.Time `firestore:"completed_at"`
 		}
 		if err := doc.DataTo(&snapshot); err != nil {
 			continue

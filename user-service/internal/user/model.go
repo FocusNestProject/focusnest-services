@@ -153,9 +153,9 @@ type Repository interface {
 	// For streak milestone challenge
 	GetCurrentStreak(ctx context.Context, userID string) (int, error)
 
-	// For cycles and mindfulness challenge
-	GetTotalCycles(ctx context.Context, userID string) (int, error)
-	GetTotalMindfulnessMinutes(ctx context.Context, userID string) (int, error)
+	// For cycles and mindfulness challenge (today only)
+	GetTodayCycles(ctx context.Context, userID string) (int, error)
+	GetTodayMindfulnessMinutes(ctx context.Context, userID string) (int, error)
 	RecordMindfulness(ctx context.Context, userID string, minutes int) error
 }
 
