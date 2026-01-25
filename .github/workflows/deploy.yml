@@ -213,6 +213,7 @@ jobs:
             --region $REGION \
             --allow-unauthenticated \
             --ingress all \
+            --set-env-vars="AUTH_MODE=clerk" \
             --set-env-vars="CLERK_JWKS_URL=${{ secrets.CLERK_JWKS_URL }}" \
             --set-env-vars="CLERK_ISSUER=${{ secrets.CLERK_ISSUER }}" \
             --set-env-vars="ACTIVITY_URL=${{ needs.deploy-focus-service.outputs.url }}" \
