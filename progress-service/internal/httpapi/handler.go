@@ -31,6 +31,7 @@ func RegisterRoutes(r chi.Router, service progress.Service) {
 			r.Get("/monthly", getMonthlyStreak(service))
 			r.Get("/weekly", getWeeklyStreak(service))
 			r.Get("/current", getCurrentStreak(service))
+			r.Post("/recover", recoverStreak(service))
 		})
 	})
 }
@@ -146,8 +147,9 @@ func getWeeklyStreak(service progress.Service) http.HandlerFunc {
 	}
 }
 
-// GET /v1/progress/streaks/current
-// Returns the current (last 30 days) streak data
+// GET /v1/progress/streak/current
+// Returns the current (last 30 days) streak data with status (active/grace/expired) and recovery quota.
+// Optional header: X-Timezone (IANA, e.g. Asia/Jakarta); default Asia/Jakarta.
 func getCurrentStreak(service progress.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		userID := headerUserID(r)
@@ -155,11 +157,15 @@ func getCurrentStreak(service progress.Service) http.HandlerFunc {
 			writeError(w, http.StatusUnauthorized, "missing user ID")
 			return
 		}
+		timezone := r.Header.Get("X-Timezone")
+		if timezone == "" {
+			timezone = r.Header.Get("x-timezone")
+		}
 
 		ctx, cancel := context.WithTimeout(r.Context(), serviceTimeout)
 		defer cancel()
 
-		data, err := service.GetCurrentStreak(ctx, userID)
+		data, err := service.GetCurrentStreak(ctx, userID, timezone)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "internal server error")
 			return
@@ -199,6 +205,48 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(payload)
+}
+
+// POST /v1/progress/streak/recover
+// Restores streak after expiry (premium only; quota 5/month). Requires X-Premium: true (gateway sets after RevenueCat check).
+// Optional header: X-Timezone (IANA); default Asia/Jakarta.
+func recoverStreak(service progress.Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID := headerUserID(r)
+		if userID == "" {
+			writeError(w, http.StatusUnauthorized, "missing user ID")
+			return
+		}
+		isPremium := r.Header.Get("X-Premium") == "true" || r.Header.Get("x-premium") == "true"
+		timezone := r.Header.Get("X-Timezone")
+		if timezone == "" {
+			timezone = r.Header.Get("x-timezone")
+		}
+
+		ctx, cancel := context.WithTimeout(r.Context(), serviceTimeout)
+		defer cancel()
+
+		data, err := service.RecoverStreak(ctx, userID, isPremium, timezone)
+		if err != nil {
+			status := http.StatusInternalServerError
+			message := "internal server error"
+			switch {
+			case errors.Is(err, progress.ErrNotPremium):
+				status = http.StatusForbidden
+				message = err.Error()
+			case errors.Is(err, progress.ErrStreakNotRecoverable):
+				status = http.StatusBadRequest
+				message = err.Error()
+			case errors.Is(err, progress.ErrRecoveryQuotaExceeded):
+				status = http.StatusBadRequest
+				message = err.Error()
+			}
+			writeError(w, status, message)
+			return
+		}
+
+		writeJSON(w, http.StatusOK, data)
+	}
 }
 
 func writeError(w http.ResponseWriter, status int, message string) {

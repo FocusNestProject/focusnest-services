@@ -7,6 +7,13 @@ import (
 	"time"
 )
 
+const (
+	dateLayout     = "2006-01-02"
+	recoveryQuota  = 5
+	graceDays      = 3 // 3 calendar days after expired_date (expired_date, +1, +2) user can recover
+	daysUntilExpiry = 2 // 2 days without activity -> expired on 3rd day (last_productive_date + 2)
+)
+
 type service struct {
 	repo Repository
 	loc  *time.Location
@@ -199,52 +206,220 @@ func (s *service) GetWeeklyStreak(ctx context.Context, userID string, targetDate
 	}, nil
 }
 
-// GetCurrentStreak returns current running streak (last 30 days window)
-func (s *service) GetCurrentStreak(ctx context.Context, userID string) (*StreakData, error) {
-	now := time.Now().In(s.loc)
-	endDate := truncateToDay(now)
+// resolveLocation returns time.Location for the given IANA timezone; defaults to service loc (Asia/Jakarta).
+func (s *service) resolveLocation(tz string) *time.Location {
+	tz = strings.TrimSpace(tz)
+	if tz == "" {
+		return s.loc
+	}
+	loc, err := time.LoadLocation(tz)
+	if err != nil {
+		return s.loc
+	}
+	return loc
+}
+
+// getLastProductiveDate returns the latest date string (YYYY-MM-DD) in days that has status "done" and is <= today.
+func getLastProductiveDate(days []DayStatus, today time.Time) string {
+	todayStr := today.Format(dateLayout)
+	var last string
+	for _, d := range days {
+		if d.Status == "done" && d.Date <= todayStr {
+			if last == "" || d.Date > last {
+				last = d.Date
+			}
+		}
+	}
+	return last
+}
+
+// streakEndingOn returns the consecutive "done" streak count ending on the given date (inclusive).
+// days are in chronological order; we count backward from endDateStr.
+func streakEndingOn(days []DayStatus, endDateStr string) int {
+	var j int
+	for j = len(days) - 1; j >= 0; j-- {
+		if days[j].Date == endDateStr {
+			break
+		}
+	}
+	if j < 0 || days[j].Status != "done" {
+		return 0
+	}
+	run := 0
+	for i := j; i >= 0; i-- {
+		if days[i].Status != "done" {
+			break
+		}
+		run++
+	}
+	return run
+}
+
+// GetCurrentStreak returns current running streak (last 30 days window) with status/grace/expired and recovery quota.
+// timezone: IANA timezone (e.g. Asia/Jakarta); used for "today". Empty = Asia/Jakarta.
+func (s *service) GetCurrentStreak(ctx context.Context, userID string, timezone string) (*StreakData, error) {
+	loc := s.resolveLocation(timezone)
+	now := time.Now().In(loc)
+	today := truncateToDay(now)
+	endDate := today
 	startDate := endDate.AddDate(0, 0, -30)
 
-	summaries, err := s.repo.GetDailySummaries(ctx, userID, startDate, endDate.AddDate(0, 0, 1)) // include today via [start, end)
+	summaries, err := s.repo.GetDailySummaries(ctx, userID, startDate, endDate.AddDate(0, 0, 1))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get daily summaries: %w", err)
 	}
 
 	dayMap := make(map[string]bool)
 	for _, summary := range summaries {
-		dayStr := summary.Date.In(s.loc).Format("2006-01-02")
+		dayStr := summary.Date.In(loc).Format(dateLayout)
 		dayMap[dayStr] = true
 	}
 
 	days := make([]DayStatus, 0)
 	for d := startDate; d.Before(endDate.AddDate(0, 0, 1)); d = d.AddDate(0, 0, 1) {
-		dayStr := d.Format("2006-01-02")
+		dayStr := d.Format(dateLayout)
 		dayName := d.Format("Monday")
-
-		var status string
-		if d.After(truncateToDay(now)) {
-			status = "upcoming"
+		var dayStatus string
+		if d.After(today) {
+			dayStatus = "upcoming"
 		} else if dayMap[dayStr] {
-			status = "done"
+			dayStatus = "done"
 		} else {
-			status = "skipped"
+			dayStatus = "skipped"
 		}
-
-		days = append(days, DayStatus{
-			Date:   dayStr,
-			Day:    dayName,
-			Status: status,
-		})
+		days = append(days, DayStatus{Date: dayStr, Day: dayName, Status: dayStatus})
 	}
 
-	// Calculate streaks
 	totalStreak, currentStreak := s.calculateStreaks(days, now)
+	lastProd := getLastProductiveDate(days, today)
 
-	return &StreakData{
-		TotalStreak:   totalStreak,
-		CurrentStreak: currentStreak,
-		Days:          days,
-	}, nil
+	resp := &StreakData{
+		TotalStreak:           totalStreak,
+		CurrentStreak:         currentStreak,
+		Days:                  days,
+		Status:                StreakStatusActive,
+		RecoveryQuotaPerMonth: recoveryQuota,
+	}
+
+	// Recovery used this month (always return; 0 for non-premium is fine)
+	yearMonth := now.Format("2006-01")
+	used, _ := s.repo.GetRecoveryQuota(ctx, userID, yearMonth)
+	resp.RecoveryUsedThisMonth = used
+
+	state, err := s.repo.GetStreakState(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("get streak state: %w", err)
+	}
+
+	// If user has recovered and has override, and no new activity after expired date -> use override
+	if state != nil && state.OverrideStreakValue > 0 && state.ExpiredAt != "" {
+		expiredT, _ := time.ParseInLocation(dateLayout, state.ExpiredAt, loc)
+		lastProdT, errLast := time.ParseInLocation(dateLayout, lastProd, loc)
+		if lastProd != "" && errLast == nil && lastProdT.After(expiredT) {
+			// New activity after expired date: clear override
+			state.OverrideStreakValue = 0
+			_ = s.repo.SetStreakState(ctx, userID, state)
+		} else {
+			resp.CurrentStreak = state.OverrideStreakValue
+			resp.Status = StreakStatusActive
+			return resp, nil
+		}
+	}
+
+	if lastProd == "" {
+		// No productive day in window -> no streak, no expired logic
+		resp.CurrentStreak = 0
+		return resp, nil
+	}
+
+	lastProdT, err := time.ParseInLocation(dateLayout, lastProd, loc)
+	if err != nil {
+		return resp, nil
+	}
+	expiredDate := lastProdT.AddDate(0, 0, daysUntilExpiry) // last_productive + 2 -> expired on that date
+
+	if today.Before(expiredDate) || today.Equal(expiredDate) {
+		// Still active
+		return resp, nil
+	}
+
+	// Expired: today > expiredDate
+	resp.ExpiredAt = expiredDate.Format(dateLayout)
+	if state == nil || state.ExpiredAt != resp.ExpiredAt {
+		// First time we see this expiry: persist streak value at last_productive_date for recovery
+		streakBeforeExpired := streakEndingOn(days, lastProd)
+		newState := &StreakState{
+			UserID:                  userID,
+			ExpiredAt:               resp.ExpiredAt,
+			StreakValueBeforeExpired: streakBeforeExpired,
+		}
+		if state != nil {
+			newState.OverrideStreakValue = state.OverrideStreakValue
+		}
+		_ = s.repo.SetStreakState(ctx, userID, newState)
+		state = newState
+	}
+
+	graceEnd := expiredDate.AddDate(0, 0, graceDays-1) // expired_date + 2 (last day of grace)
+	if today.After(graceEnd) {
+		// After grace: reset to 0
+		resp.CurrentStreak = 0
+		resp.Status = StreakStatusExpired
+		return resp, nil
+	}
+
+	// Within grace window (expired_date < today <= graceEnd)
+	resp.Status = StreakStatusGrace
+	resp.GraceEndsAt = graceEnd.Format(dateLayout)
+	resp.CurrentStreak = state.StreakValueBeforeExpired
+	return resp, nil
+}
+
+// RecoverStreak restores the user's streak after expiry (premium only, quota 5/month).
+func (s *service) RecoverStreak(ctx context.Context, userID string, isPremium bool, timezone string) (*StreakData, error) {
+	if !isPremium {
+		return nil, ErrNotPremium
+	}
+
+	loc := s.resolveLocation(timezone)
+	now := time.Now().In(loc)
+	yearMonth := now.Format("2006-01")
+
+	state, err := s.repo.GetStreakState(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("get streak state: %w", err)
+	}
+	if state == nil || state.ExpiredAt == "" {
+		return nil, ErrStreakNotRecoverable
+	}
+
+	expiredT, _ := time.ParseInLocation(dateLayout, state.ExpiredAt, loc)
+	graceEnd := expiredT.AddDate(0, 0, graceDays-1)
+	today := truncateToDay(now)
+	if today.After(graceEnd) {
+		return nil, ErrStreakNotRecoverable
+	}
+
+	count, err := s.repo.IncrementRecoveryQuota(ctx, userID, yearMonth)
+	if err != nil {
+		if err == ErrRecoveryQuotaExceeded {
+			return nil, err
+		}
+		return nil, fmt.Errorf("increment recovery quota: %w", err)
+	}
+
+	state.OverrideStreakValue = state.StreakValueBeforeExpired
+	// Keep ExpiredAt so GetCurrentStreak knows to use override until new activity after that date
+	if err := s.repo.SetStreakState(ctx, userID, state); err != nil {
+		return nil, fmt.Errorf("set streak state: %w", err)
+	}
+
+	data, err := s.GetCurrentStreak(ctx, userID, timezone)
+	if err != nil {
+		return nil, err
+	}
+	data.RecoveryUsedThisMonth = count
+	return data, nil
 }
 
 // calculateStreaks calculates total (longest) and current streaks from day statuses

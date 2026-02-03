@@ -9,6 +9,12 @@ import (
 	"google.golang.org/api/iterator"
 )
 
+const (
+	streakStateColl        = "streak_state"
+	streakRecoveryQuotaColl = "streak_recovery_quota"
+	recoveryQuotaLimit     = 5
+)
+
 type firestoreRepository struct {
 	client *firestore.Client
 }
@@ -174,4 +180,80 @@ func (r *firestoreRepository) GetProgressStats(ctx context.Context, userID strin
 	}
 
 	return stats, nil
+}
+
+func (r *firestoreRepository) GetStreakState(ctx context.Context, userID string) (*StreakState, error) {
+	doc, err := r.client.Collection(streakStateColl).Doc(userID).Get(ctx)
+	if err != nil {
+		if isNotFound(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var state StreakState
+	if err := doc.DataTo(&state); err != nil {
+		return nil, fmt.Errorf("unmarshal streak_state: %w", err)
+	}
+	return &state, nil
+}
+
+func (r *firestoreRepository) SetStreakState(ctx context.Context, userID string, state *StreakState) error {
+	state.UserID = userID
+	state.UpdatedAt = time.Now().UTC()
+	_, err := r.client.Collection(streakStateColl).Doc(userID).Set(ctx, state)
+	return err
+}
+
+func (r *firestoreRepository) GetRecoveryQuota(ctx context.Context, userID string, yearMonth string) (int, error) {
+	docID := userID + "_" + yearMonth
+	doc, err := r.client.Collection(streakRecoveryQuotaColl).Doc(docID).Get(ctx)
+	if err != nil {
+		if isNotFound(err) {
+			return 0, nil
+		}
+		return 0, err
+	}
+	var q RecoveryQuota
+	if err := doc.DataTo(&q); err != nil {
+		return 0, fmt.Errorf("unmarshal recovery_quota: %w", err)
+	}
+	return q.Count, nil
+}
+
+func (r *firestoreRepository) IncrementRecoveryQuota(ctx context.Context, userID string, yearMonth string) (int, error) {
+	docID := userID + "_" + yearMonth
+	ref := r.client.Collection(streakRecoveryQuotaColl).Doc(docID)
+	err := r.client.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
+		doc, err := tx.Get(ref)
+		var count int
+		if err != nil && !isNotFound(err) {
+			return err
+		}
+		if err == nil {
+			var q RecoveryQuota
+			if err := doc.DataTo(&q); err != nil {
+				return err
+			}
+			count = q.Count
+		}
+		if count >= recoveryQuotaLimit {
+			return ErrRecoveryQuotaExceeded
+		}
+		count++
+		return tx.Set(ref, &RecoveryQuota{
+			UserID:    userID,
+			YearMonth: yearMonth,
+			Count:     count,
+			UpdatedAt: time.Now().UTC(),
+		})
+	})
+	if err != nil {
+		return 0, err
+	}
+	// Return new count
+	return r.GetRecoveryQuota(ctx, userID, yearMonth)
+}
+
+func isNotFound(err error) bool {
+	return err != nil && firestore.NotFound(err)
 }

@@ -26,11 +26,40 @@ type ProgressStats struct {
 	Periods       map[string]interface{} `json:"periods"`    // convenience buckets
 }
 
+// StreakStatus is the user's streak state for recovery/grace logic.
+const (
+	StreakStatusActive  = "active"
+	StreakStatusGrace   = "grace"
+	StreakStatusExpired = "expired"
+)
+
 // StreakData represents streak information
 type StreakData struct {
-	TotalStreak   int         `json:"total_streak"`   // longest (all-time) consecutive active days
-	CurrentStreak int         `json:"current_streak"` // consecutive active days ending today (or last completed day)
-	Days          []DayStatus `json:"days"`
+	TotalStreak            int         `json:"total_streak"`              // longest (all-time) consecutive active days
+	CurrentStreak          int         `json:"current_streak"`             // consecutive active days ending today (or last completed day)
+	Days                   []DayStatus `json:"days"`
+	Status                 string      `json:"status"`                     // active | grace | expired
+	GraceEndsAt            string      `json:"grace_ends_at,omitempty"`   // YYYY-MM-DD; only when status=grace (last day user can recover)
+	ExpiredAt              string      `json:"expired_at,omitempty"`       // YYYY-MM-DD; when streak expired
+	RecoveryUsedThisMonth  int         `json:"recovery_used_this_month"`  // premium: recoveries used in current month
+	RecoveryQuotaPerMonth  int         `json:"recovery_quota_per_month"`  // premium: 5
+}
+
+// StreakState is persisted per user for expired/grace and recovery override.
+type StreakState struct {
+	UserID                 string `firestore:"user_id"`
+	ExpiredAt              string `firestore:"expired_at"`               // YYYY-MM-DD when streak expired
+	StreakValueBeforeExpired int   `firestore:"streak_value_before_expired"`
+	OverrideStreakValue    int    `firestore:"override_streak_value"`    // after recovery, show this until next activity
+	UpdatedAt              time.Time `firestore:"updated_at"`
+}
+
+// RecoveryQuota is recovery count per user per month (reset on 1st).
+type RecoveryQuota struct {
+	UserID    string    `firestore:"user_id"`
+	YearMonth string    `firestore:"year_month"` // e.g. "2026-02"
+	Count     int       `firestore:"count"`
+	UpdatedAt time.Time `firestore:"updated_at"`
 }
 
 // SummaryRange represents the supported summary windows.
@@ -106,6 +135,10 @@ type Repository interface {
 	GetDailySummaries(ctx context.Context, userID string, startDate, endDate time.Time) ([]*DailySummary, error)
 	GetProgressStats(ctx context.Context, userID string, startDate, endDate time.Time) (*ProgressStats, error)
 	ListProductivities(ctx context.Context, userID string, startDate, endDate time.Time) ([]ProductivityEntry, error)
+	GetStreakState(ctx context.Context, userID string) (*StreakState, error)
+	SetStreakState(ctx context.Context, userID string, state *StreakState) error
+	GetRecoveryQuota(ctx context.Context, userID string, yearMonth string) (int, error)
+	IncrementRecoveryQuota(ctx context.Context, userID string, yearMonth string) (int, error)
 }
 
 // Service defines the progress service interface
@@ -113,6 +146,7 @@ type Service interface {
 	GetProgress(ctx context.Context, userID string, startDate, endDate time.Time) (*ProgressStats, error)
 	GetMonthlyStreak(ctx context.Context, userID string, month, year int) (*MonthlyStreakData, error)
 	GetWeeklyStreak(ctx context.Context, userID string, targetDate time.Time) (*WeeklyStreakData, error)
-	GetCurrentStreak(ctx context.Context, userID string) (*StreakData, error)
+	GetCurrentStreak(ctx context.Context, userID string, timezone string) (*StreakData, error)
+	RecoverStreak(ctx context.Context, userID string, isPremium bool, timezone string) (*StreakData, error)
 	GetSummary(ctx context.Context, userID string, input SummaryInput) (*SummaryResponse, error)
 }

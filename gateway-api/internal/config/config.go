@@ -18,6 +18,10 @@ type Config struct {
 	UserURL      *url.URL
 	AnalyticsURL *url.URL
 	ChatbotURL   *url.URL
+
+	// RevenueCat: optional; used to set X-Premium for POST /v1/progress/streak/recover
+	RevenueCatSecretKey    string
+	RevenueCatEntitlementID string
 }
 
 // ParseURLCompat parses a required absolute URL from env.

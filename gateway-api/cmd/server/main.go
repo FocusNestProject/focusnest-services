@@ -7,6 +7,7 @@ import (
 
 	"github.com/focusnest/gateway-api/internal/config"
 	"github.com/focusnest/gateway-api/internal/httpapi"
+	"github.com/focusnest/gateway-api/internal/revenuecat"
 	"github.com/focusnest/shared-libs/auth"
 )
 
@@ -51,7 +52,14 @@ func main() {
 		Chatbot:   cfg.ChatbotURL,
 	}
 
-	router := httpapi.Router(verifier, targets, logger)
+	// Optional: RevenueCat client for X-Premium on POST /v1/progress/streak/recover
+	var premiumChecker *revenuecat.Client
+	if cfg.RevenueCatSecretKey != "" && cfg.RevenueCatEntitlementID != "" {
+		premiumChecker = revenuecat.NewClient(cfg.RevenueCatSecretKey, cfg.RevenueCatEntitlementID)
+		logger.Info("RevenueCat premium checker enabled", slog.String("entitlement_id", cfg.RevenueCatEntitlementID))
+	}
+
+	router := httpapi.Router(verifier, targets, premiumChecker, logger)
 
 	addr := ":" + cfg.Port
 	logger.Info("listening", slog.String("addr", addr))
@@ -112,6 +120,12 @@ func loadConfig() (*config.Config, error) {
 			return nil, err
 		}
 		cfg.ChatbotURL = u
+	}
+
+	cfg.RevenueCatSecretKey = os.Getenv("REVENUECAT_SECRET_KEY")
+	cfg.RevenueCatEntitlementID = os.Getenv("REVENUECAT_ENTITLEMENT_ID")
+	if cfg.RevenueCatEntitlementID == "" {
+		cfg.RevenueCatEntitlementID = "focusnest_premium"
 	}
 
 	return cfg, nil

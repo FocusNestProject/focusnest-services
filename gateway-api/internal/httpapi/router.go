@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"google.golang.org/api/idtoken"
 
+	"github.com/focusnest/gateway-api/internal/revenuecat"
 	"github.com/focusnest/shared-libs/auth"
 )
 
@@ -23,7 +24,7 @@ type Targets struct {
 	Chatbot   *url.URL
 }
 
-func Router(verifier auth.Verifier, targets Targets, logger *slog.Logger) http.Handler {
+func Router(verifier auth.Verifier, targets Targets, premiumChecker *revenuecat.Client, logger *slog.Logger) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
@@ -43,13 +44,13 @@ func Router(verifier auth.Verifier, targets Targets, logger *slog.Logger) http.H
 		r.Use(injectUserIDHeader())
 
 		// Routing table (matches the root handbook).
-		r.Mount("/v1/productivities", proxyHandler(targets.Activity, logger))
-		r.Mount("/v1/progress", proxyHandler(targets.Analytics, logger))
-		r.Mount("/v1/chatbot", proxyHandler(targets.Chatbot, logger))
-		r.Mount("/v1/users", proxyHandler(targets.User, logger))
-		r.Mount("/v1/challenges", proxyHandler(targets.User, logger))
-		r.Mount("/v1/shares", proxyHandler(targets.User, logger))
-		r.Mount("/v1/mindfulness", proxyHandler(targets.User, logger))
+		r.Mount("/v1/productivities", proxyHandler(targets.Activity, nil, logger))
+		r.Mount("/v1/progress", proxyHandler(targets.Analytics, premiumChecker, logger))
+		r.Mount("/v1/chatbot", proxyHandler(targets.Chatbot, nil, logger))
+		r.Mount("/v1/users", proxyHandler(targets.User, nil, logger))
+		r.Mount("/v1/challenges", proxyHandler(targets.User, nil, logger))
+		r.Mount("/v1/shares", proxyHandler(targets.User, nil, logger))
+		r.Mount("/v1/mindfulness", proxyHandler(targets.User, nil, logger))
 	})
 
 	return r
@@ -66,7 +67,7 @@ func injectUserIDHeader() func(http.Handler) http.Handler {
 	}
 }
 
-func proxyHandler(target *url.URL, logger *slog.Logger) http.Handler {
+func proxyHandler(target *url.URL, premiumChecker *revenuecat.Client, logger *slog.Logger) http.Handler {
 	if target == nil {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "upstream not configured", http.StatusBadGateway)
@@ -89,7 +90,21 @@ func proxyHandler(target *url.URL, logger *slog.Logger) http.Handler {
 		origDirector(req)
 		// Ensure the upstream sees the right Host and preserve original path.
 		req.Host = target.Host
-		
+
+		// For POST /v1/progress/streak/recover: verify premium with RevenueCat and set X-Premium
+		if premiumChecker != nil && req.Method == http.MethodPost && strings.Contains(req.URL.Path, "/streak/recover") {
+			userID := req.Header.Get("X-User-ID")
+			if userID != "" {
+				ok, err := premiumChecker.HasEntitlement(req.Context(), userID)
+				if err != nil && logger != nil {
+					logger.Warn("revenuecat entitlement check failed", slog.String("user_id", userID), slog.Any("error", err))
+				}
+				if ok {
+					req.Header.Set("X-Premium", "true")
+				}
+			}
+		}
+
 		// Add ID token for service-to-service authentication
 		if tokenSource != nil {
 			token, err := tokenSource.Token()
