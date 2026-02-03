@@ -120,13 +120,15 @@ type MonthHistoryResponse struct {
 
 // ListItem is a lightweight projection returned by the list endpoint.
 type ListItem struct {
-	ID          string    `json:"id"`
-	Image       string    `json:"image"`
-	Category    string    `json:"category"`
-	TimeElapsed int       `json:"time_elapsed"`
-	NumCycle    int       `json:"num_cycle"`
-	TimeMode    string    `json:"time_mode"`
-	StartTime   time.Time `json:"start_time"`
+	ID           string    `json:"id"`
+	Image        string    `json:"image"`
+	Category     string    `json:"category"`
+	ActivityName string    `json:"activity_name,omitempty"`
+	Description  string    `json:"description,omitempty"`
+	TimeElapsed  int       `json:"time_elapsed"`
+	NumCycle     int       `json:"num_cycle"`
+	TimeMode     string    `json:"time_mode"`
+	StartTime    time.Time `json:"start_time"`
 }
 
 // ListResponse represents a paginated list response.
@@ -469,13 +471,15 @@ func (s *Service) List(ctx context.Context, input ListInput) (ListResponse, erro
 	items := make([]ListItem, 0, len(entries))
 	for _, e := range entries {
 		items = append(items, ListItem{
-			ID:          e.ID,
-			Image:       e.Image,
-			Category:    e.Category,
-			TimeElapsed: e.TimeElapsed,
-			NumCycle:    e.NumCycle,
-			TimeMode:    e.TimeMode,
-			StartTime:   e.StartTime,
+			ID:           e.ID,
+			Image:        e.Image,
+			Category:     e.Category,
+			ActivityName: e.ActivityName,
+			Description:  e.Description,
+			TimeElapsed:  e.TimeElapsed,
+			NumCycle:     e.NumCycle,
+			TimeMode:     e.TimeMode,
+			StartTime:    e.StartTime,
 		})
 	}
 
