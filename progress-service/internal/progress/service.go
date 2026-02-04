@@ -422,9 +422,13 @@ func (s *service) RecoverStreak(ctx context.Context, userID string, isPremium bo
 	return data, nil
 }
 
-// calculateStreaks calculates total (longest) and current streaks from day statuses
+// calculateStreaks calculates total (longest) and current streaks from day statuses.
+// - totalStreak  : longest run of consecutive "done" days in the window.
+// - currentStreak: consecutive "done" days ending on the *last productive day* (<= today),
+//                  so streak tetap menunjukkan jumlah hari terakhir yang konsisten,
+//                  meskipun hari ini belum ada aktivitas (belum "done").
 func (s *service) calculateStreaks(days []DayStatus, now time.Time) (totalStreak, currentStreak int) {
-	// Longest consecutive "done"
+	// Longest consecutive "done" (unchanged)
 	maxStreak := 0
 	run := 0
 	for _, day := range days {
@@ -439,24 +443,15 @@ func (s *service) calculateStreaks(days []DayStatus, now time.Time) (totalStreak
 	}
 	totalStreak = maxStreak
 
-	// Current streak (ending today; tolerate that "today" might be not finished yet)
-	run = 0
+	// Current streak: count consecutive "done" days ending at last productive date <= today.
 	today := truncateToDay(now)
-
-	for i := len(days) - 1; i >= 0; i-- {
-		day := days[i]
-		dayDate, _ := time.Parse("2006-01-02", day.Date)
-		// Skip future days just in case
-		if dayDate.After(today) {
-			continue
-		}
-		if day.Status == "done" {
-			run++
-		} else {
-			break
-		}
+	lastProd := getLastProductiveDate(days, today)
+	if lastProd == "" {
+		currentStreak = 0
+		return
 	}
-	currentStreak = run
+
+	currentStreak = streakEndingOn(days, lastProd)
 	return
 }
 
