@@ -125,6 +125,7 @@ type ListItem struct {
 	Category     string    `json:"category"`
 	ActivityName string    `json:"activity_name,omitempty"`
 	Description  string    `json:"description,omitempty"`
+	Mood         string    `json:"mood,omitempty"`
 	TimeElapsed  int       `json:"time_elapsed"`
 	NumCycle     int       `json:"num_cycle"`
 	TimeMode     string    `json:"time_mode"`
@@ -476,6 +477,7 @@ func (s *Service) List(ctx context.Context, input ListInput) (ListResponse, erro
 			Category:     e.Category,
 			ActivityName: e.ActivityName,
 			Description:  e.Description,
+			Mood:         e.Mood,
 			TimeElapsed:  e.TimeElapsed,
 			NumCycle:     e.NumCycle,
 			TimeMode:     e.TimeMode,
