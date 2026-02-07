@@ -219,7 +219,8 @@ jobs:
             --set-env-vars="ACTIVITY_URL=${{ needs.deploy-focus-service.outputs.url }}" \
             --set-env-vars="USER_URL=${{ needs.deploy-user-service.outputs.url }}" \
             --set-env-vars="ANALYTICS_URL=${{ needs.deploy-progress-service.outputs.url }}" \
-            --set-env-vars="CHATBOT_URL=${{ needs.deploy-chatbot-service.outputs.url }}"
+            --set-env-vars="CHATBOT_URL=${{ needs.deploy-chatbot-service.outputs.url }}" \
+            --set-env-vars="REVENUECAT_SECRET_KEY=${{ secrets.REVENUECAT_SECRET_KEY }}"
 
       - name: Get Gateway URL
         id: gateway-url
