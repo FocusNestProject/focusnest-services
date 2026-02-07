@@ -10,8 +10,8 @@ import (
 const (
 	dateLayout     = "2006-01-02"
 	recoveryQuota  = 5
-	graceDays      = 3 // 3 calendar days after expired_date (expired_date, +1, +2) user can recover
-	daysUntilExpiry = 2 // 2 days without activity -> expired on 3rd day (last_productive_date + 2)
+	graceDays       = 3 // grace window = expired_date … expired_date+2 (3 calendar days)
+	daysUntilExpiry = 1 // 1 day without activity -> expired next day (last_productive_date + 1)
 )
 
 type service struct {
