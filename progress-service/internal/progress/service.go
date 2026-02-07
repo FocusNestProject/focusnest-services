@@ -311,19 +311,52 @@ func (s *service) GetCurrentStreak(ctx context.Context, userID string, timezone 
 		return nil, fmt.Errorf("get streak state: %w", err)
 	}
 
-	// If user has recovered and has override, and no new activity after expired date -> use override
+	// If user has recovered and has override, handle bridged streak across the recovered gap.
 	if state != nil && state.OverrideStreakValue > 0 && state.ExpiredAt != "" {
 		expiredT, _ := time.ParseInLocation(dateLayout, state.ExpiredAt, loc)
-		lastProdT, errLast := time.ParseInLocation(dateLayout, lastProd, loc)
-		if lastProd != "" && errLast == nil && lastProdT.After(expiredT) {
-			// New activity after expired date: clear override
+		lastProdT2, errLast := time.ParseInLocation(dateLayout, lastProd, loc)
+		if lastProd != "" && errLast == nil && lastProdT2.After(expiredT) {
+			// New activity after expired date: bridge the gap
+			// bridged = pre-break streak + consecutive days after the break
+			postBreakStreak := streakEndingOn(days, lastProd)
+			bridgedStreak := state.StreakValueBeforeExpired + postBreakStreak
+
+			// Check for a NEW break based on the actual last productive date
+			newExpiredDate := lastProdT2.AddDate(0, 0, daysUntilExpiry)
+
+			if today.Before(newExpiredDate) || today.Equal(newExpiredDate) {
+				// Still active: persist bridged value
+				state.OverrideStreakValue = bridgedStreak
+				_ = s.repo.SetStreakState(ctx, userID, state)
+				resp.CurrentStreak = bridgedStreak
+				resp.Status = StreakStatusActive
+				return resp, nil
+			}
+
+			// New break detected after the recovered streak!
+			newGraceEnd := newExpiredDate.AddDate(0, 0, graceDays-1)
+			state.ExpiredAt = newExpiredDate.Format(dateLayout)
+			state.StreakValueBeforeExpired = bridgedStreak
 			state.OverrideStreakValue = 0
 			_ = s.repo.SetStreakState(ctx, userID, state)
-		} else {
-			resp.CurrentStreak = state.OverrideStreakValue
-			resp.Status = StreakStatusActive
+
+			resp.ExpiredAt = newExpiredDate.Format(dateLayout)
+
+			if today.After(newGraceEnd) {
+				resp.CurrentStreak = 0
+				resp.Status = StreakStatusExpired
+				return resp, nil
+			}
+			// Within grace for the new break
+			resp.Status = StreakStatusGrace
+			resp.GraceEndsAt = newGraceEnd.Format(dateLayout)
+			resp.CurrentStreak = bridgedStreak
 			return resp, nil
 		}
+		// No new activity after expired date: use override as-is
+		resp.CurrentStreak = state.OverrideStreakValue
+		resp.Status = StreakStatusActive
+		return resp, nil
 	}
 
 	if lastProd == "" {
@@ -336,7 +369,7 @@ func (s *service) GetCurrentStreak(ctx context.Context, userID string, timezone 
 	if err != nil {
 		return resp, nil
 	}
-	expiredDate := lastProdT.AddDate(0, 0, daysUntilExpiry) // last_productive + 2 -> expired on that date
+	expiredDate := lastProdT.AddDate(0, 0, daysUntilExpiry)
 
 	if today.Before(expiredDate) || today.Equal(expiredDate) {
 		// Still active
@@ -346,7 +379,7 @@ func (s *service) GetCurrentStreak(ctx context.Context, userID string, timezone 
 	// Expired: today > expiredDate
 	resp.ExpiredAt = expiredDate.Format(dateLayout)
 	if state == nil || state.ExpiredAt != resp.ExpiredAt {
-		// First time we see this expiry: persist streak value at last_productive_date for recovery
+		// First time we see this expiry: persist streak value for recovery
 		streakBeforeExpired := streakEndingOn(days, lastProd)
 		newState := &StreakState{
 			UserID:                  userID,
