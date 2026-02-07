@@ -7,6 +7,8 @@ import (
 
 	"cloud.google.com/go/firestore"
 	"google.golang.org/api/iterator"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 const (
@@ -255,5 +257,5 @@ func (r *firestoreRepository) IncrementRecoveryQuota(ctx context.Context, userID
 }
 
 func isNotFound(err error) bool {
-	return err != nil && firestore.NotFound(err)
+	return err != nil && status.Code(err) == codes.NotFound
 }
