@@ -56,7 +56,7 @@ func Load() (Config, error) {
 		},
 		LLM: LLMConfig{
 			APIKey:          resolveAPIKey(),
-			Model:           envconfig.Get("GEMINI_MODEL", "gemini-2.0-flash-exp"),
+			Model:           envconfig.Get("GEMINI_MODEL", "gemini-2.5-flash"),
 			ContextMessages: parseIntFallback(envconfig.Get("CHATBOT_CONTEXT_MESSAGES", "32"), 32),
 			MaxOutputTokens: parseIntFallback(envconfig.Get("CHATBOT_MAX_OUTPUT_TOKENS", "1024"), 1024),
 			UseVertex:       parseBool(envconfig.Get("GOOGLE_GENAI_USE_VERTEXAI", "false")),

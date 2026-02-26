@@ -38,7 +38,7 @@ type GeminiAssistant struct {
 func NewGeminiAssistant(ctx context.Context, cfg AssistantConfig) (Assistant, error) {
 	model := strings.TrimSpace(cfg.Model)
 	if model == "" {
-		model = "gemini-2.0-flash-exp"
+		model = "gemini-2.5-flash"
 	}
 	maxTokens := cfg.MaxOutputTokens
 	if maxTokens <= 0 {

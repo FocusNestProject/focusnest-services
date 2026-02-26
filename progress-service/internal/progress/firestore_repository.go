@@ -225,6 +225,7 @@ func (r *firestoreRepository) GetRecoveryQuota(ctx context.Context, userID strin
 func (r *firestoreRepository) IncrementRecoveryQuota(ctx context.Context, userID string, yearMonth string) (int, error) {
 	docID := userID + "_" + yearMonth
 	ref := r.client.Collection(streakRecoveryQuotaColl).Doc(docID)
+	var newCount int
 	err := r.client.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
 		doc, err := tx.Get(ref)
 		var count int
@@ -242,6 +243,7 @@ func (r *firestoreRepository) IncrementRecoveryQuota(ctx context.Context, userID
 			return ErrRecoveryQuotaExceeded
 		}
 		count++
+		newCount = count
 		return tx.Set(ref, &RecoveryQuota{
 			UserID:    userID,
 			YearMonth: yearMonth,
@@ -252,8 +254,7 @@ func (r *firestoreRepository) IncrementRecoveryQuota(ctx context.Context, userID
 	if err != nil {
 		return 0, err
 	}
-	// Return new count
-	return r.GetRecoveryQuota(ctx, userID, yearMonth)
+	return newCount, nil
 }
 
 func isNotFound(err error) bool {

@@ -29,7 +29,7 @@ func Router(verifier auth.Verifier, targets Targets, premiumChecker *revenuecat.
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)
-	r.Use(middleware.Timeout(15 * time.Second))
+	r.Use(middleware.Timeout(60 * time.Second))
 
 	// Unauthenticated health.
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {

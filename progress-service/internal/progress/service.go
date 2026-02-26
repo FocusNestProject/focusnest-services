@@ -426,6 +426,11 @@ func (s *service) RecoverStreak(ctx context.Context, userID string, isPremium bo
 		return nil, ErrStreakNotRecoverable
 	}
 
+	// Already recovered for this expiry? Don't consume quota again.
+	if state.OverrideStreakValue > 0 {
+		return nil, ErrStreakNotRecoverable
+	}
+
 	expiredT, _ := time.ParseInLocation(dateLayout, state.ExpiredAt, loc)
 	graceEnd := expiredT.AddDate(0, 0, graceDays-1)
 	today := truncateToDay(now)
