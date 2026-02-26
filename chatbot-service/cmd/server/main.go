@@ -60,7 +60,8 @@ func main() {
 		defer assistant.Close()
 	}
 
-	chatbotService, err := chatbot.NewService(chatbotRepo, assistant, cfg.LLM.ContextMessages, chatbot.WithLogger(logger))
+	enrichmentProvider := chatbot.NewFirestoreEnrichmentProvider(client, logger)
+	chatbotService, err := chatbot.NewService(chatbotRepo, assistant, cfg.LLM.ContextMessages, chatbot.WithLogger(logger), chatbot.WithEnrichment(enrichmentProvider))
 	if err != nil {
 		panic(fmt.Errorf("chatbot service init error: %w", err))
 	}

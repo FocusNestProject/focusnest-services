@@ -13,7 +13,7 @@ import (
 
 // Assistant encapsulates model-backed responses.
 type Assistant interface {
-	Respond(ctx context.Context, lang string, prompt string, context []*ChatMessage) (string, error)
+	Respond(ctx context.Context, lang string, prompt string, context []*ChatMessage, enrichment string) (string, error)
 	Close() error
 }
 
@@ -96,7 +96,7 @@ func (g *GeminiAssistant) Close() error {
 }
 
 // Respond generates a productivity-focused reply using prior context.
-func (g *GeminiAssistant) Respond(ctx context.Context, lang string, prompt string, contextHistory []*ChatMessage) (string, error) {
+func (g *GeminiAssistant) Respond(ctx context.Context, lang string, prompt string, contextHistory []*ChatMessage, enrichment string) (string, error) {
 	// Sanitize user input to prevent prompt injection
 	sanitizedPrompt := sanitizeInput(prompt)
 	
@@ -108,8 +108,13 @@ func (g *GeminiAssistant) Respond(ctx context.Context, lang string, prompt strin
 	}
 	contents = append(contents, genai.NewContentFromText(sanitizedPrompt, genai.RoleUser))
 
+	sysPrompt := systemPrompt(lang)
+	if enrichment != "" {
+		sysPrompt += "\n" + enrichment
+	}
+
 	resp, err := g.client.Models.GenerateContent(ctx, g.model, contents, &genai.GenerateContentConfig{
-		SystemInstruction: genai.NewContentFromText(systemPrompt(lang), genai.RoleUser),
+		SystemInstruction: genai.NewContentFromText(sysPrompt, genai.RoleUser),
 		Temperature:       genai.Ptr(float32(0.75)),
 		TopP:              genai.Ptr(float32(0.95)),
 		MaxOutputTokens:   int32(g.maxTokens),
@@ -176,7 +181,7 @@ func NewTemplateAssistant() Assistant {
 
 // Respond returns a simple message indicating AI is unavailable.
 // This should only be used when no AI assistant is configured.
-func (t *TemplateAssistant) Respond(ctx context.Context, lang string, prompt string, contextHistory []*ChatMessage) (string, error) {
+func (t *TemplateAssistant) Respond(ctx context.Context, lang string, prompt string, contextHistory []*ChatMessage, _ string) (string, error) {
 	if lang == languageIndonesian {
 		return "Maaf, fitur AI sedang tidak tersedia. Silakan coba lagi nanti atau hubungi support.", nil
 	}

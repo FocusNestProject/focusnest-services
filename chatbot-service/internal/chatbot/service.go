@@ -18,6 +18,7 @@ type service struct {
 	assistant     Assistant
 	contextWindow int
 	logger        *slog.Logger
+	enrichment    EnrichmentProvider
 }
 
 // NewService wires the chatbot service with persistence and responder.
@@ -128,6 +129,20 @@ func (s *service) AskQuestion(ctx context.Context, userID, sessionID, question s
 
 	lang := detectLanguage(trimmed, contextMessages)
 
+	// Fetch user productivity data for enriched context
+	var enrichmentText string
+	if s.enrichment != nil {
+		userCtx, err := s.enrichment.GetUserContext(ctx, userID)
+		if err != nil {
+			s.logger.Warn("enrichment fetch failed, proceeding without it",
+				slog.String("userId", userID),
+				slog.Any("error", err),
+			)
+		} else {
+			enrichmentText = FormatEnrichmentPrompt(userCtx, lang)
+		}
+	}
+
 	userMessage := &ChatMessage{
 		ID:        uuid.New().String(),
 		SessionID: session.ID,
@@ -140,7 +155,7 @@ func (s *service) AskQuestion(ctx context.Context, userID, sessionID, question s
 	}
 
 	// Try to get AI-generated response, with retry on failure
-	responseText, err := s.assistant.Respond(ctx, lang, trimmed, contextMessages)
+	responseText, err := s.assistant.Respond(ctx, lang, trimmed, contextMessages, enrichmentText)
 	if err != nil {
 		s.logger.Error("gemini respond failed (attempt 1)",
 			slog.String("sessionId", session.ID),
@@ -153,7 +168,7 @@ func (s *service) AskQuestion(ctx context.Context, userID, sessionID, question s
 		if len(simplifiedContext) > 4 {
 			simplifiedContext = simplifiedContext[len(simplifiedContext)-4:]
 		}
-		responseText, err = s.assistant.Respond(ctx, lang, trimmed, simplifiedContext)
+		responseText, err = s.assistant.Respond(ctx, lang, trimmed, simplifiedContext, enrichmentText)
 		if err != nil {
 			s.logger.Error("gemini respond failed (attempt 2 - giving up)",
 				slog.String("sessionId", session.ID),
