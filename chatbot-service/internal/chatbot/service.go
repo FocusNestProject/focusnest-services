@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -16,10 +17,11 @@ type service struct {
 	repo          Repository
 	assistant     Assistant
 	contextWindow int
+	logger        *slog.Logger
 }
 
 // NewService wires the chatbot service with persistence and responder.
-func NewService(repo Repository, assistant Assistant, contextWindow int) (Service, error) {
+func NewService(repo Repository, assistant Assistant, contextWindow int, opts ...func(*service)) (Service, error) {
 	if repo == nil {
 		return nil, errors.New("repository is required")
 	}
@@ -29,7 +31,16 @@ func NewService(repo Repository, assistant Assistant, contextWindow int) (Servic
 	if contextWindow <= 0 {
 		contextWindow = 32
 	}
-	return &service{repo: repo, assistant: assistant, contextWindow: contextWindow}, nil
+	s := &service{repo: repo, assistant: assistant, contextWindow: contextWindow, logger: slog.Default()}
+	for _, o := range opts {
+		o(s)
+	}
+	return s, nil
+}
+
+// WithLogger sets a custom logger for the service.
+func WithLogger(l *slog.Logger) func(*service) {
+	return func(s *service) { s.logger = l }
 }
 
 func (s *service) CreateSession(userID, title string) (*ChatbotSession, error) {
@@ -131,6 +142,11 @@ func (s *service) AskQuestion(ctx context.Context, userID, sessionID, question s
 	// Try to get AI-generated response, with retry on failure
 	responseText, err := s.assistant.Respond(ctx, lang, trimmed, contextMessages)
 	if err != nil {
+		s.logger.Error("gemini respond failed (attempt 1)",
+			slog.String("sessionId", session.ID),
+			slog.Int("contextSize", len(contextMessages)),
+			slog.Any("error", err),
+		)
 		// Retry once with a simpler context if first attempt fails
 		// Use only the last few messages for retry
 		simplifiedContext := contextMessages
@@ -139,8 +155,12 @@ func (s *service) AskQuestion(ctx context.Context, userID, sessionID, question s
 		}
 		responseText, err = s.assistant.Respond(ctx, lang, trimmed, simplifiedContext)
 		if err != nil {
+			s.logger.Error("gemini respond failed (attempt 2 - giving up)",
+				slog.String("sessionId", session.ID),
+				slog.Int("contextSize", len(simplifiedContext)),
+				slog.Any("error", err),
+			)
 			// Last resort: return a simple, context-aware message without templates
-			// Note: Error details are logged by the handler, not exposed to user
 			if lang == languageIndonesian {
 				responseText = "Maaf, ada masalah teknis. Bisa coba lagi? Aku di sini untuk membantu dengan produktivitas dan fokus kamu."
 			} else {

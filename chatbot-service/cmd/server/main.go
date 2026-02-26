@@ -60,7 +60,7 @@ func main() {
 		defer assistant.Close()
 	}
 
-	chatbotService, err := chatbot.NewService(chatbotRepo, assistant, cfg.LLM.ContextMessages)
+	chatbotService, err := chatbot.NewService(chatbotRepo, assistant, cfg.LLM.ContextMessages, chatbot.WithLogger(logger))
 	if err != nil {
 		panic(fmt.Errorf("chatbot service init error: %w", err))
 	}
