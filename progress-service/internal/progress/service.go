@@ -353,9 +353,24 @@ func (s *service) GetCurrentStreak(ctx context.Context, userID string, timezone 
 			resp.CurrentStreak = bridgedStreak
 			return resp, nil
 		}
-		// No new activity after expired date: use override as-is
+		// No new activity after expired date.
+		// Recovery preserved the streak, but user needs to resume activity.
+		// Re-check: if grace period from original break has passed with no new
+		// session, the streak should expire — override cannot last forever.
+		graceEndFromExpiry := expiredT.AddDate(0, 0, graceDays)
+		if today.After(graceEndFromExpiry) {
+			// Past grace with no new activity → fully expired
+			state.OverrideStreakValue = 0
+			_ = s.repo.SetStreakState(ctx, userID, state)
+			resp.CurrentStreak = 0
+			resp.Status = StreakStatusExpired
+			resp.ExpiredAt = state.ExpiredAt
+			return resp, nil
+		}
+		// Still within grace window from original break — keep recovered value
 		resp.CurrentStreak = state.OverrideStreakValue
-		resp.Status = StreakStatusActive
+		resp.Status = StreakStatusGrace
+		resp.GraceEndsAt = graceEndFromExpiry.Format(dateLayout)
 		return resp, nil
 	}
 
