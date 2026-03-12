@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"google.golang.org/api/idtoken"
 
+	"github.com/focusnest/gateway-api/internal/feedback"
 	"github.com/focusnest/gateway-api/internal/revenuecat"
 	"github.com/focusnest/shared-libs/auth"
 )
@@ -24,7 +25,7 @@ type Targets struct {
 	Chatbot   *url.URL
 }
 
-func Router(verifier auth.Verifier, targets Targets, premiumChecker *revenuecat.Client, logger *slog.Logger) http.Handler {
+func Router(verifier auth.Verifier, targets Targets, premiumChecker *revenuecat.Client, feedbackHandler *feedback.Handler, logger *slog.Logger) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
@@ -51,6 +52,11 @@ func Router(verifier auth.Verifier, targets Targets, premiumChecker *revenuecat.
 		r.Mount("/v1/challenges", proxyHandler(targets.User, nil, logger))
 		r.Mount("/v1/shares", proxyHandler(targets.User, nil, logger))
 		r.Mount("/v1/mindfulness", proxyHandler(targets.User, nil, logger))
+
+		// Feedback — handled directly in the gateway (Resend + Firestore).
+		if feedbackHandler != nil {
+			r.Post("/v1/feedback", feedbackHandler.ServeHTTP)
+		}
 	})
 
 	return r

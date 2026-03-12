@@ -22,6 +22,15 @@ type Config struct {
 	// RevenueCat: optional; used to set X-Premium for POST /v1/progress/streak/recover
 	RevenueCatSecretKey    string
 	RevenueCatEntitlementID string
+
+	// Feedback / Resend
+	ResendAPIKey           string
+	FeedbackRecipientEmail string // e.g. hello@focuzenapp.com
+	FeedbackSenderEmail    string // e.g. Focuzen Feedback <feedback@focuzenapp.com>
+
+	// GCP / Firestore (optional – if blank, Firestore persistence is skipped)
+	GCPProjectID       string
+	FirestoreEmulatorHost string
 }
 
 // ParseURLCompat parses a required absolute URL from env.

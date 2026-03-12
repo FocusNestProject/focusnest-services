@@ -1,11 +1,16 @@
 package main
 
 import (
+	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 
+	"cloud.google.com/go/firestore"
+
 	"github.com/focusnest/gateway-api/internal/config"
+	"github.com/focusnest/gateway-api/internal/feedback"
 	"github.com/focusnest/gateway-api/internal/httpapi"
 	"github.com/focusnest/gateway-api/internal/revenuecat"
 	"github.com/focusnest/shared-libs/auth"
@@ -59,7 +64,51 @@ func main() {
 		logger.Info("RevenueCat premium checker enabled", slog.String("entitlement_id", cfg.RevenueCatEntitlementID))
 	}
 
-	router := httpapi.Router(verifier, targets, premiumChecker, logger)
+	// ── Feedback handler (Resend + optional Firestore) ─────────────
+	var feedbackHandler *feedback.Handler
+	if cfg.ResendAPIKey != "" {
+		resendClient := feedback.NewResendClient(cfg.ResendAPIKey)
+
+		// Optional: Firestore for feedback persistence
+		var fsClient *firestore.Client
+		if cfg.GCPProjectID != "" {
+			if cfg.FirestoreEmulatorHost != "" {
+				if err := os.Setenv("FIRESTORE_EMULATOR_HOST", cfg.FirestoreEmulatorHost); err != nil {
+					logger.Error("failed to set FIRESTORE_EMULATOR_HOST", slog.Any("error", err))
+				}
+			}
+			databaseID := "focusnest-prod"
+			if cfg.FirestoreEmulatorHost != "" {
+				databaseID = "(default)"
+			}
+			fsClient, err = firestore.NewClientWithDatabase(context.Background(), cfg.GCPProjectID, databaseID)
+			if err != nil {
+				logger.Warn("firestore unavailable for feedback — email-only mode",
+					slog.Any("error", err),
+				)
+				// Continue without Firestore; email sending still works.
+			} else {
+				defer fsClient.Close()
+				logger.Info("firestore enabled for feedback persistence")
+			}
+		}
+
+		feedbackHandler = feedback.NewHandler(
+			resendClient,
+			fsClient,
+			cfg.FeedbackRecipientEmail,
+			cfg.FeedbackSenderEmail,
+			logger,
+		)
+		logger.Info("feedback handler enabled",
+			slog.String("recipient", cfg.FeedbackRecipientEmail),
+			slog.String("sender", cfg.FeedbackSenderEmail),
+		)
+	} else {
+		logger.Warn("RESEND_API_KEY not set — feedback endpoint disabled")
+	}
+
+	router := httpapi.Router(verifier, targets, premiumChecker, feedbackHandler, logger)
 
 	addr := ":" + cfg.Port
 	logger.Info("listening", slog.String("addr", addr))
@@ -93,7 +142,7 @@ func loadConfig() (*config.Config, error) {
 	if activityURL := os.Getenv("ACTIVITY_URL"); activityURL != "" {
 		u, err := config.ParseURLCompat(activityURL)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("ACTIVITY_URL: %w", err)
 		}
 		cfg.ActivityURL = u
 	}
@@ -101,7 +150,7 @@ func loadConfig() (*config.Config, error) {
 	if userURL := os.Getenv("USER_URL"); userURL != "" {
 		u, err := config.ParseURLCompat(userURL)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("USER_URL: %w", err)
 		}
 		cfg.UserURL = u
 	}
@@ -109,7 +158,7 @@ func loadConfig() (*config.Config, error) {
 	if analyticsURL := os.Getenv("ANALYTICS_URL"); analyticsURL != "" {
 		u, err := config.ParseURLCompat(analyticsURL)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("ANALYTICS_URL: %w", err)
 		}
 		cfg.AnalyticsURL = u
 	}
@@ -117,7 +166,7 @@ func loadConfig() (*config.Config, error) {
 	if chatbotURL := os.Getenv("CHATBOT_URL"); chatbotURL != "" {
 		u, err := config.ParseURLCompat(chatbotURL)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("CHATBOT_URL: %w", err)
 		}
 		cfg.ChatbotURL = u
 	}
@@ -127,6 +176,21 @@ func loadConfig() (*config.Config, error) {
 	if cfg.RevenueCatEntitlementID == "" {
 		cfg.RevenueCatEntitlementID = "focusnest_premium"
 	}
+
+	// Feedback / Resend
+	cfg.ResendAPIKey = os.Getenv("RESEND_API_KEY")
+	cfg.FeedbackRecipientEmail = os.Getenv("FEEDBACK_RECIPIENT_EMAIL")
+	if cfg.FeedbackRecipientEmail == "" {
+		cfg.FeedbackRecipientEmail = "hello@focuzenapp.com"
+	}
+	cfg.FeedbackSenderEmail = os.Getenv("FEEDBACK_SENDER_EMAIL")
+	if cfg.FeedbackSenderEmail == "" {
+		cfg.FeedbackSenderEmail = "Focuzen Feedback <feedback@contact.focuzenapp.com>"
+	}
+
+	// GCP / Firestore
+	cfg.GCPProjectID = os.Getenv("GCP_PROJECT_ID")
+	cfg.FirestoreEmulatorHost = os.Getenv("FIRESTORE_EMULATOR_HOST")
 
 	return cfg, nil
 }
