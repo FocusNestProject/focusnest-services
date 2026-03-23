@@ -71,6 +71,13 @@ func (r *firestoreRepository) aggregateFromProductivities(ctx context.Context, u
 		return nil, err
 	}
 
+	// Use Asia/Jakarta timezone for day grouping so that e.g. 05:14 WIB is
+	// counted on the correct local date, not the UTC date (which would be the previous day).
+	loc, err := time.LoadLocation("Asia/Jakarta")
+	if err != nil {
+		loc = time.UTC
+	}
+
 	dayMap := make(map[string]*DailySummary)
 	for _, entry := range entries {
 		if entry.StartTime.IsZero() {
@@ -80,7 +87,9 @@ func (r *firestoreRepository) aggregateFromProductivities(ctx context.Context, u
 		if mins <= 0 && entry.TimeElapsed > 0 {
 			mins = 1
 		}
-		dayStr := entry.StartTime.Format("2006-01-02")
+		localStart := entry.StartTime.In(loc)
+		dayStr := localStart.Format("2006-01-02")
+		dayDate := time.Date(localStart.Year(), localStart.Month(), localStart.Day(), 0, 0, 0, 0, loc)
 		if summary, exists := dayMap[dayStr]; exists {
 			summary.TotalTime += mins
 			summary.Categories[entry.Category] += mins
@@ -89,7 +98,7 @@ func (r *firestoreRepository) aggregateFromProductivities(ctx context.Context, u
 			dayMap[dayStr] = &DailySummary{
 				ID:         dayStr,
 				UserID:     userID,
-				Date:       entry.StartTime.Truncate(24 * time.Hour),
+				Date:       dayDate,
 				TotalTime:  mins,
 				Categories: map[string]int{entry.Category: mins},
 				Sessions:   1,
