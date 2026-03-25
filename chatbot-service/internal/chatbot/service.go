@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -13,12 +14,51 @@ import (
 	"golang.org/x/text/language"
 )
 
+// userRateLimiter enforces a sliding-window request limit per user.
+// It is in-process only — sufficient to protect against accidental loops
+// or single-user abuse on any given Cloud Run instance.
+type userRateLimiter struct {
+	mu     sync.Mutex
+	times  map[string][]time.Time
+	limit  int
+	window time.Duration
+}
+
+func newUserRateLimiter(limit int, window time.Duration) *userRateLimiter {
+	return &userRateLimiter{
+		times:  make(map[string][]time.Time),
+		limit:  limit,
+		window: window,
+	}
+}
+
+func (rl *userRateLimiter) allow(userID string) bool {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+	now := time.Now()
+	cutoff := now.Add(-rl.window)
+	prev := rl.times[userID]
+	valid := prev[:0]
+	for _, t := range prev {
+		if t.After(cutoff) {
+			valid = append(valid, t)
+		}
+	}
+	if len(valid) >= rl.limit {
+		rl.times[userID] = valid
+		return false
+	}
+	rl.times[userID] = append(valid, now)
+	return true
+}
+
 type service struct {
 	repo          Repository
 	assistant     Assistant
 	contextWindow int
 	logger        *slog.Logger
 	enrichment    EnrichmentProvider
+	rateLimiter   *userRateLimiter
 }
 
 // NewService wires the chatbot service with persistence and responder.
@@ -32,7 +72,13 @@ func NewService(repo Repository, assistant Assistant, contextWindow int, opts ..
 	if contextWindow <= 0 {
 		contextWindow = 32
 	}
-	s := &service{repo: repo, assistant: assistant, contextWindow: contextWindow, logger: slog.Default()}
+	s := &service{
+		repo:          repo,
+		assistant:     assistant,
+		contextWindow: contextWindow,
+		logger:        slog.Default(),
+		rateLimiter:   newUserRateLimiter(30, time.Minute),
+	}
 	for _, o := range opts {
 		o(s)
 	}
@@ -116,12 +162,15 @@ func (s *service) AskQuestion(ctx context.Context, userID, sessionID, question s
 		return nil, "", ErrEmptyQuestion
 	}
 
+	if !s.rateLimiter.allow(userID) {
+		return nil, "", ErrRateLimited
+	}
+
 	session, err := s.ensureSessionForPrompt(userID, sessionID, trimmed)
 	if err != nil {
 		return nil, "", err
 	}
 
-	// Get context before creating the new user message to avoid duplicates
 	contextMessages, err := s.repo.GetRecentMessages(session.ID, s.contextWindow)
 	if err != nil {
 		return nil, "", fmt.Errorf("load context: %w", err)
@@ -143,18 +192,8 @@ func (s *service) AskQuestion(ctx context.Context, userID, sessionID, question s
 		}
 	}
 
-	userMessage := &ChatMessage{
-		ID:        uuid.New().String(),
-		SessionID: session.ID,
-		Role:      "user",
-		Content:   trimmed,
-		CreatedAt: time.Now().UTC(),
-	}
-	if err := s.repo.CreateMessage(userMessage); err != nil {
-		return nil, "", fmt.Errorf("create user message: %w", err)
-	}
-
-	// Try to get AI-generated response, with retry on failure
+	// Call AI before persisting anything — if it fails, nothing is saved and
+	// the user gets a clean error they can retry.
 	responseText, err := s.assistant.Respond(ctx, lang, trimmed, contextMessages, enrichmentText)
 	if err != nil {
 		s.logger.Error("gemini respond failed (attempt 1)",
@@ -162,8 +201,9 @@ func (s *service) AskQuestion(ctx context.Context, userID, sessionID, question s
 			slog.Int("contextSize", len(contextMessages)),
 			slog.Any("error", err),
 		)
-		// Retry once with a simpler context if first attempt fails
-		// Use only the last few messages for retry
+		// Backoff before retry
+		time.Sleep(500 * time.Millisecond)
+		// Retry with a reduced context window
 		simplifiedContext := contextMessages
 		if len(simplifiedContext) > 4 {
 			simplifiedContext = simplifiedContext[len(simplifiedContext)-4:]
@@ -175,13 +215,20 @@ func (s *service) AskQuestion(ctx context.Context, userID, sessionID, question s
 				slog.Int("contextSize", len(simplifiedContext)),
 				slog.Any("error", err),
 			)
-			// Last resort: return a simple, context-aware message without templates
-			if lang == languageIndonesian {
-				responseText = "Maaf, ada masalah teknis. Bisa coba lagi? Aku di sini untuk membantu dengan produktivitas dan fokus kamu."
-			} else {
-				responseText = "Sorry, I'm having a technical issue. Could you try again? I'm here to help with your productivity and focus."
-			}
+			return nil, "", fmt.Errorf("assistant unavailable: %w", err)
 		}
+	}
+
+	now := time.Now().UTC()
+	userMessage := &ChatMessage{
+		ID:        uuid.New().String(),
+		SessionID: session.ID,
+		Role:      "user",
+		Content:   trimmed,
+		CreatedAt: now,
+	}
+	if err := s.repo.CreateMessage(userMessage); err != nil {
+		return nil, "", fmt.Errorf("create user message: %w", err)
 	}
 
 	assistantMessage := &ChatMessage{
@@ -189,7 +236,7 @@ func (s *service) AskQuestion(ctx context.Context, userID, sessionID, question s
 		SessionID: session.ID,
 		Role:      "assistant",
 		Content:   responseText,
-		CreatedAt: time.Now().UTC(),
+		CreatedAt: now.Add(time.Millisecond),
 	}
 	if err := s.repo.CreateMessage(assistantMessage); err != nil {
 		return nil, "", fmt.Errorf("create assistant message: %w", err)

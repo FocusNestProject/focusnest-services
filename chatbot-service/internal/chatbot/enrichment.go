@@ -28,18 +28,28 @@ type SessionSummary struct {
 // UserProductivityContext holds aggregated user data for enriching the chatbot prompt.
 type UserProductivityContext struct {
 	// Today
-	TodaySessions int
-	TodayMinutes  int
+	TodaySessions   int
+	TodayMinutes    int
 	TodayByCategory map[string]int // category -> minutes
 
 	// This week
-	WeekSessions int
-	WeekMinutes  int
+	WeekSessions   int
+	WeekMinutes    int
 	WeekByCategory map[string]int
+
+	// Last week (for trend comparison)
+	LastWeekSessions int
+	LastWeekMinutes  int
 
 	// Streak
 	CurrentStreak int
 	LongestStreak int
+	StreakStatus   string // "active", "grace", "expired", or "" (unknown)
+	GraceEndsAt   string // YYYY-MM-DD, only set when StreakStatus == "grace"
+
+	// Most productive hour (e.g. 9 = 09:00-10:00)
+	MostProductiveHour    int  // 0-23
+	MostProductiveHourSet bool // false if not enough data
 
 	// Recent moods (last 5 sessions)
 	RecentMoods []string
@@ -137,17 +147,18 @@ func (p *firestoreEnrichmentProvider) fetchUserContext(ctx context.Context, user
 	now := time.Now().UTC()
 	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
 	weekStart := todayStart.AddDate(0, 0, -int(todayStart.Weekday()))
+	lastWeekStart := weekStart.AddDate(0, 0, -7)
 
 	g, gctx := errgroup.WithContext(ctx)
 
-	// 1. Fetch productivities from last 7 days
+	// 1. Fetch productivities from last 14 days (this week + last week for trend)
 	var docs []productivityDoc
 	g.Go(func() error {
 		iter := p.client.Collection("users").Doc(userID).Collection("productivities").
 			Where("deleted", "==", false).
-			Where("anchor", ">=", weekStart).
+			Where("anchor", ">=", lastWeekStart).
 			OrderBy("anchor", firestore.Desc).
-			Limit(50).
+			Limit(100).
 			Documents(gctx)
 		defer iter.Stop()
 
@@ -211,6 +222,7 @@ func (p *firestoreEnrichmentProvider) fetchUserContext(ctx context.Context, user
 
 	// Aggregate productivities
 	timeModeCount := make(map[string]int)
+	hourBuckets := make(map[int]int) // hour (0-23) -> total minutes
 	moodsSeen := 0
 
 	for _, d := range docs {
@@ -219,11 +231,22 @@ func (p *firestoreEnrichmentProvider) fetchUserContext(ctx context.Context, user
 			mins = 1
 		}
 
-		// Week totals
-		uctx.WeekSessions++
-		uctx.WeekMinutes += mins
-		if d.Category != "" {
-			uctx.WeekByCategory[d.Category] += mins
+		isThisWeek := !d.StartTime.Before(weekStart)
+		isLastWeek := d.StartTime.Before(weekStart) && !d.StartTime.Before(lastWeekStart)
+
+		// This week totals
+		if isThisWeek {
+			uctx.WeekSessions++
+			uctx.WeekMinutes += mins
+			if d.Category != "" {
+				uctx.WeekByCategory[d.Category] += mins
+			}
+		}
+
+		// Last week totals (for trend)
+		if isLastWeek {
+			uctx.LastWeekSessions++
+			uctx.LastWeekMinutes += mins
 		}
 
 		// Today totals
@@ -244,6 +267,11 @@ func (p *firestoreEnrichmentProvider) fetchUserContext(ctx context.Context, user
 		// Time mode count
 		if d.TimeMode != "" {
 			timeModeCount[d.TimeMode]++
+		}
+
+		// Most productive hour — bucket each session's start hour
+		if !d.StartTime.IsZero() && mins > 0 {
+			hourBuckets[d.StartTime.Hour()] += mins
 		}
 	}
 
@@ -278,10 +306,33 @@ func (p *firestoreEnrichmentProvider) fetchUserContext(ctx context.Context, user
 		}
 	}
 
+	// Most productive hour
+	if len(hourBuckets) > 0 {
+		bestHour := 0
+		bestMins := 0
+		for h, m := range hourBuckets {
+			if m > bestMins {
+				bestHour = h
+				bestMins = m
+			}
+		}
+		uctx.MostProductiveHour = bestHour
+		uctx.MostProductiveHourSet = true
+	}
+
 	// Streak: calculate current streak from productivities and apply streak_state override
 	uctx.CurrentStreak, uctx.LongestStreak = calculateStreakFromDocs(docs, todayStart)
 	if streakDoc != nil && streakDoc.OverrideStreakValue > uctx.CurrentStreak {
 		uctx.CurrentStreak = streakDoc.OverrideStreakValue
+	}
+
+	// Streak status: derive from streak_state and last productive day
+	uctx.StreakStatus = deriveStreakStatus(docs, todayStart, streakDoc)
+	if uctx.StreakStatus == "grace" && streakDoc != nil && streakDoc.ExpiredAt != "" {
+		expT, err := time.Parse("2006-01-02", streakDoc.ExpiredAt)
+		if err == nil {
+			uctx.GraceEndsAt = expT.AddDate(0, 0, 2).Format("2006-01-02") // grace = expired_date + 2
+		}
 	}
 
 	// Points
@@ -350,6 +401,50 @@ func calculateStreakFromDocs(docs []productivityDoc, todayStart time.Time) (curr
 	return current, longest
 }
 
+// deriveStreakStatus determines whether the user's streak is active, in grace, or expired.
+// This mirrors the logic in progress-service but simplified for enrichment purposes.
+func deriveStreakStatus(docs []productivityDoc, todayStart time.Time, streakDoc *streakStateDoc) string {
+	// Find last productive day
+	var lastProd time.Time
+	for _, d := range docs {
+		if !d.StartTime.IsZero() {
+			day := time.Date(d.StartTime.Year(), d.StartTime.Month(), d.StartTime.Day(), 0, 0, 0, 0, time.UTC)
+			if day.After(lastProd) {
+				lastProd = day
+			}
+		}
+	}
+	if lastProd.IsZero() {
+		return ""
+	}
+
+	// If last productive day is today or yesterday → active
+	daysSince := int(todayStart.Sub(lastProd).Hours() / 24)
+	if daysSince <= 1 {
+		return "active"
+	}
+
+	// Check streak_state for recovery/override
+	if streakDoc != nil && streakDoc.OverrideStreakValue > 0 && streakDoc.ExpiredAt != "" {
+		expT, err := time.Parse("2006-01-02", streakDoc.ExpiredAt)
+		if err == nil {
+			graceEnd := expT.AddDate(0, 0, 3)
+			if todayStart.Before(graceEnd) {
+				return "grace"
+			}
+			return "expired"
+		}
+	}
+
+	// No streak_state override: expired_date = lastProd + 1 day, grace = 3 days from expired
+	expiredDate := lastProd.AddDate(0, 0, 1)
+	graceEnd := expiredDate.AddDate(0, 0, 2) // expired_date + 2 (3 calendar days total)
+	if todayStart.Before(graceEnd) || todayStart.Equal(graceEnd) {
+		return "grace"
+	}
+	return "expired"
+}
+
 // FormatEnrichmentPrompt builds a compact text block from user productivity data.
 // Returns empty string if there is no data (new user).
 func FormatEnrichmentPrompt(uctx *UserProductivityContext, lang string) string {
@@ -381,23 +476,46 @@ func FormatEnrichmentPrompt(uctx *UserProductivityContext, lang string) string {
 		}
 	}
 
-	// This week
+	// This week + week-over-week trend
 	if uctx.WeekSessions > 0 {
 		topCat, topMins := topCategory(uctx.WeekByCategory)
 		b.WriteString(fmt.Sprintf("This week: %d sessions, %s", uctx.WeekSessions, formatDuration(uctx.WeekMinutes)))
 		if topCat != "" {
 			b.WriteString(fmt.Sprintf(" | Top: %s (%s)", topCat, formatDuration(topMins)))
 		}
+		if uctx.LastWeekMinutes > 0 {
+			pct := ((uctx.WeekMinutes - uctx.LastWeekMinutes) * 100) / uctx.LastWeekMinutes
+			if pct > 0 {
+				b.WriteString(fmt.Sprintf(" | Trend: +%d%% vs last week", pct))
+			} else if pct < 0 {
+				b.WriteString(fmt.Sprintf(" | Trend: %d%% vs last week", pct))
+			} else {
+				b.WriteString(" | Trend: same as last week")
+			}
+		} else if uctx.LastWeekSessions == 0 {
+			b.WriteString(" | Last week: no sessions")
+		}
 		b.WriteString("\n")
 	}
 
 	// Streak
-	if uctx.CurrentStreak > 0 || uctx.LongestStreak > 0 {
+	if uctx.CurrentStreak > 0 || uctx.LongestStreak > 0 || uctx.StreakStatus != "" {
 		b.WriteString(fmt.Sprintf("Streak: %d days (best: %d)", uctx.CurrentStreak, uctx.LongestStreak))
+		if uctx.StreakStatus != "" {
+			b.WriteString(fmt.Sprintf(" | Status: %s", uctx.StreakStatus))
+		}
+		if uctx.StreakStatus == "grace" && uctx.GraceEndsAt != "" {
+			b.WriteString(fmt.Sprintf(" (grace ends %s — user will lose streak if no session before then!)", uctx.GraceEndsAt))
+		}
 		if len(uctx.RecentMoods) > 0 {
 			b.WriteString(fmt.Sprintf(" | Mood trend: %s", strings.Join(uctx.RecentMoods, ", ")))
 		}
 		b.WriteString("\n")
+	}
+
+	// Most productive hour
+	if uctx.MostProductiveHourSet {
+		b.WriteString(fmt.Sprintf("Most productive hour: %02d:00-%02d:00\n", uctx.MostProductiveHour, (uctx.MostProductiveHour+1)%24))
 	}
 
 	// Preferred mode & points

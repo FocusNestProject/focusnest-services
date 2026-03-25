@@ -34,6 +34,8 @@ var (
 	ErrEmptyQuestion = errors.New("question is required")
 	// ErrEmptyTitle is returned when attempting to save a blank title
 	ErrEmptyTitle = errors.New("title is required")
+	// ErrRateLimited is returned when a user exceeds the allowed message rate
+	ErrRateLimited = errors.New("rate limit exceeded")
 )
 
 // Repository defines the interface for chatbot data access

@@ -228,6 +228,8 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "question is required")
 	case errors.Is(err, chatbot.ErrEmptyTitle):
 		writeError(w, http.StatusBadRequest, "title is required")
+	case errors.Is(err, chatbot.ErrRateLimited):
+		writeError(w, http.StatusTooManyRequests, "too many requests, please slow down")
 	default:
 		writeError(w, http.StatusInternalServerError, "internal server error")
 	}
