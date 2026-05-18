@@ -141,8 +141,10 @@ type BirthdatePatch struct {
 type Repository interface {
 	GetProfile(ctx context.Context, userID string) (*Profile, error)
 	UpsertProfile(ctx context.Context, userID string, updates ProfileUpdateInput) (*Profile, error)
-	GetProfileMetadata(ctx context.Context, userID string) (ProfileMetadata, error)
-	GetDailyMinutesByDate(ctx context.Context, userID string, startDate, endDate time.Time) (map[string]int, error)
+	GetProfileMetadata(ctx context.Context, userID string, loc *time.Location) (ProfileMetadata, error)
+	GetDailyMinutesByDate(ctx context.Context, userID string, startDate, endDate time.Time, loc *time.Location) (map[string]int, error)
+	ListChallenges(ctx context.Context) ([]ChallengeDefinition, error)
+	CreateChallenge(ctx context.Context, def ChallengeDefinition) error
 	IsChallengeClaimed(ctx context.Context, userID, challengeID string) (bool, error)
 	ClaimChallenge(ctx context.Context, userID, challengeID string, points int) (newTotal int, claimedAt time.Time, alreadyClaimed bool, err error)
 
@@ -151,21 +153,22 @@ type Repository interface {
 	RecordShare(ctx context.Context, userID string, shareType string) error
 
 	// For streak milestone challenge
-	GetCurrentStreak(ctx context.Context, userID string) (int, error)
+	GetCurrentStreak(ctx context.Context, userID string, loc *time.Location) (int, error)
 
 	// For cycles and mindfulness challenge (today only)
-	GetTodayCycles(ctx context.Context, userID string) (int, error)
-	GetTodayMindfulnessMinutes(ctx context.Context, userID string) (int, error)
+	GetTodayCycles(ctx context.Context, userID string, loc *time.Location) (int, error)
+	GetTodayMindfulnessMinutes(ctx context.Context, userID string, loc *time.Location) (int, error)
 	RecordMindfulness(ctx context.Context, userID string, minutes int) error
 }
 
 // Service defines the user service interface.
 type Service interface {
-	GetProfile(ctx context.Context, userID string) (*ProfileResponse, error)
-	UpdateProfile(ctx context.Context, userID string, updates ProfileUpdateInput) (*ProfileResponse, error)
+	GetProfile(ctx context.Context, userID string, timezone string) (*ProfileResponse, error)
+	UpdateProfile(ctx context.Context, userID string, updates ProfileUpdateInput, timezone string) (*ProfileResponse, error)
 	ListChallenges(ctx context.Context) ([]ChallengeDefinition, error)
-	GetChallengesMe(ctx context.Context, userID string) (*ChallengesMeResponse, error)
-	ClaimChallenge(ctx context.Context, userID, challengeID string) (*ClaimChallengeResponse, error)
+	MigrateChallenges(ctx context.Context) error
+	GetChallengesMe(ctx context.Context, userID string, timezone string) (*ChallengesMeResponse, error)
+	ClaimChallenge(ctx context.Context, userID, challengeID string, timezone string) (*ClaimChallengeResponse, error)
 	RecordShare(ctx context.Context, userID string, shareType string) error
 	RecordMindfulness(ctx context.Context, userID string, minutes int) error
 }

@@ -12,10 +12,6 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-var (
-	profileLocation = loadProfileLocation()
-)
-
 type firestoreRepository struct {
 	client *firestore.Client
 }
@@ -23,14 +19,6 @@ type firestoreRepository struct {
 // NewFirestoreRepository creates a new Firestore repository
 func NewFirestoreRepository(client *firestore.Client) Repository {
 	return &firestoreRepository{client: client}
-}
-
-func loadProfileLocation() *time.Location {
-	loc, err := time.LoadLocation("Asia/Jakarta")
-	if err != nil {
-		return time.UTC
-	}
-	return loc
 }
 
 func (r *firestoreRepository) GetProfile(ctx context.Context, userID string) (*Profile, error) {
@@ -84,7 +72,7 @@ func (r *firestoreRepository) UpsertProfile(ctx context.Context, userID string, 
 	return r.GetProfile(ctx, userID)
 }
 
-func (r *firestoreRepository) GetProfileMetadata(ctx context.Context, userID string) (ProfileMetadata, error) {
+func (r *firestoreRepository) GetProfileMetadata(ctx context.Context, userID string, loc *time.Location) (ProfileMetadata, error) {
 	metrics := ProfileMetadata{}
 	query := r.productivitiesQuery(userID).
 		Select("start_time", "deleted", "num_cycle", "category").
@@ -135,7 +123,7 @@ func (r *firestoreRepository) GetProfileMetadata(ctx context.Context, userID str
 		if snapshot.StartTime.IsZero() {
 			continue
 		}
-		day := snapshot.StartTime.In(profileLocation).Truncate(24 * time.Hour)
+		day := snapshot.StartTime.In(loc).Truncate(24 * time.Hour)
 		if !lastProcessedDay.IsZero() && day.Equal(lastProcessedDay) {
 			continue
 		}
@@ -165,7 +153,7 @@ func (r *firestoreRepository) productivitiesQuery(userID string) firestore.Query
 	return r.client.Collection("users").Doc(userID).Collection("productivities").Query
 }
 
-func (r *firestoreRepository) GetDailyMinutesByDate(ctx context.Context, userID string, startDate, endDate time.Time) (map[string]int, error) {
+func (r *firestoreRepository) GetDailyMinutesByDate(ctx context.Context, userID string, startDate, endDate time.Time, loc *time.Location) (map[string]int, error) {
 	// Primary source: daily_summaries (same schema as progress-service).
 	iter := r.client.Collection("daily_summaries").
 		Where("user_id", "==", userID).
@@ -193,7 +181,7 @@ func (r *firestoreRepository) GetDailyMinutesByDate(ctx context.Context, userID 
 		if err := doc.DataTo(&summary); err != nil {
 			continue
 		}
-		key := summary.Date.In(profileLocation).Format("2006-01-02")
+		key := summary.Date.In(loc).Format("2006-01-02")
 		minsByDate[key] = summary.TotalTime
 		found++
 	}
@@ -216,7 +204,7 @@ func (r *firestoreRepository) GetDailyMinutesByDate(ctx context.Context, userID 
 		if mins <= 0 && e.TimeElapsed > 0 {
 			mins = 1
 		}
-		key := e.StartTime.In(profileLocation).Format("2006-01-02")
+		key := e.StartTime.In(loc).Format("2006-01-02")
 		minsByDate[key] += mins
 	}
 
@@ -259,6 +247,33 @@ func (r *firestoreRepository) fetchProductivitiesForWindow(ctx context.Context, 
 type ProductivityEntry struct {
 	StartTime   time.Time
 	TimeElapsed int
+}
+
+func (r *firestoreRepository) ListChallenges(ctx context.Context) ([]ChallengeDefinition, error) {
+	iter := r.client.Collection("challenges").Documents(ctx)
+	defer iter.Stop()
+
+	var challenges []ChallengeDefinition
+	for {
+		doc, err := iter.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch challenges: %w", err)
+		}
+		var def ChallengeDefinition
+		if err := doc.DataTo(&def); err != nil {
+			continue
+		}
+		challenges = append(challenges, def)
+	}
+	return challenges, nil
+}
+
+func (r *firestoreRepository) CreateChallenge(ctx context.Context, def ChallengeDefinition) error {
+	_, err := r.client.Collection("challenges").Doc(def.ID).Set(ctx, def)
+	return err
 }
 
 func (r *firestoreRepository) IsChallengeClaimed(ctx context.Context, userID, challengeID string) (bool, error) {
@@ -416,7 +431,7 @@ func (r *firestoreRepository) RecordShare(ctx context.Context, userID string, sh
 
 // GetCurrentStreak returns the current consecutive active days streak for the user.
 // An "active" day is any day with at least one productivity session.
-func (r *firestoreRepository) GetCurrentStreak(ctx context.Context, userID string) (int, error) {
+func (r *firestoreRepository) GetCurrentStreak(ctx context.Context, userID string, loc *time.Location) (int, error) {
 	if userID == "" {
 		return 0, nil
 	}
@@ -450,7 +465,7 @@ func (r *firestoreRepository) GetCurrentStreak(ctx context.Context, userID strin
 			continue
 		}
 
-		day := snapshot.StartTime.In(profileLocation).Format("2006-01-02")
+		day := snapshot.StartTime.In(loc).Format("2006-01-02")
 		activeDays[day] = true
 	}
 
@@ -459,7 +474,7 @@ func (r *firestoreRepository) GetCurrentStreak(ctx context.Context, userID strin
 	}
 
 	// Calculate current streak from today backwards
-	today := time.Now().In(profileLocation)
+	today := time.Now().In(loc)
 	streak := 0
 
 	for i := 0; i < 365; i++ { // Safety cap at 1 year
@@ -479,14 +494,14 @@ func (r *firestoreRepository) GetCurrentStreak(ctx context.Context, userID strin
 }
 
 // GetTodayCycles returns the total number of work cycles completed by the user today.
-func (r *firestoreRepository) GetTodayCycles(ctx context.Context, userID string) (int, error) {
+func (r *firestoreRepository) GetTodayCycles(ctx context.Context, userID string, loc *time.Location) (int, error) {
 	if userID == "" {
 		return 0, nil
 	}
 
 	// Get start and end of today in user's timezone (Asia/Jakarta)
-	now := time.Now().In(profileLocation)
-	startOfDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, profileLocation)
+	now := time.Now().In(loc)
+	startOfDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
 	endOfDay := startOfDay.Add(24 * time.Hour)
 
 	query := r.productivitiesQuery(userID).
@@ -524,14 +539,14 @@ func (r *firestoreRepository) GetTodayCycles(ctx context.Context, userID string)
 }
 
 // GetTodayMindfulnessMinutes returns the total mindfulness minutes for the user today.
-func (r *firestoreRepository) GetTodayMindfulnessMinutes(ctx context.Context, userID string) (int, error) {
+func (r *firestoreRepository) GetTodayMindfulnessMinutes(ctx context.Context, userID string, loc *time.Location) (int, error) {
 	if userID == "" {
 		return 0, nil
 	}
 
 	// Get start and end of today in user's timezone (Asia/Jakarta)
-	now := time.Now().In(profileLocation)
-	startOfDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, profileLocation)
+	now := time.Now().In(loc)
+	startOfDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
 	endOfDay := startOfDay.Add(24 * time.Hour)
 
 	iter := r.client.Collection("profiles").Doc(userID).Collection("mindfulness").

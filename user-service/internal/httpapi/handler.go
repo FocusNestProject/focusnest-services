@@ -37,6 +37,7 @@ func RegisterRoutes(r chi.Router, service user.Service, logger *slog.Logger) {
 		r.Get("/", listChallenges(service, logger))
 		r.Get("/me", getChallengesMe(service, logger))
 		r.Post("/{id}/claim", claimChallenge(service, logger))
+		r.Post("/migrate", migrateChallenges(service, logger))
 	})
 
 	r.Route("/v1/shares", func(r chi.Router) {
@@ -73,10 +74,18 @@ func getChallengesMe(service user.Service, logger *slog.Logger) http.HandlerFunc
 			return
 		}
 
+		timezone := r.Header.Get("X-Timezone")
+		if timezone == "" {
+			timezone = r.Header.Get("x-timezone")
+		}
+		if timezone == "" {
+			timezone = r.URL.Query().Get("timezone")
+		}
+
 		ctx, cancel := context.WithTimeout(r.Context(), serviceTimeout)
 		defer cancel()
 
-		resp, err := service.GetChallengesMe(ctx, userID)
+		resp, err := service.GetChallengesMe(ctx, userID, timezone)
 		if err != nil {
 			logRequestError(r.Context(), logger, "failed to load challenges me", err, userID)
 			writeError(w, http.StatusInternalServerError, "failed to load challenges")
@@ -99,16 +108,38 @@ func claimChallenge(service user.Service, logger *slog.Logger) http.HandlerFunc 
 			return
 		}
 
+		timezone := r.Header.Get("X-Timezone")
+		if timezone == "" {
+			timezone = r.Header.Get("x-timezone")
+		}
+		if timezone == "" {
+			timezone = r.URL.Query().Get("timezone")
+		}
+
 		ctx, cancel := context.WithTimeout(r.Context(), serviceTimeout)
 		defer cancel()
 
-		resp, err := service.ClaimChallenge(ctx, userID, challengeID)
+		resp, err := service.ClaimChallenge(ctx, userID, challengeID, timezone)
 		if err != nil {
 			logRequestError(r.Context(), logger, "failed to claim challenge", err, userID)
 			writeError(w, http.StatusInternalServerError, "failed to claim challenge")
 			return
 		}
 		writeJSON(w, http.StatusOK, resp)
+	}
+}
+
+func migrateChallenges(service user.Service, logger *slog.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), serviceTimeout)
+		defer cancel()
+
+		if err := service.MigrateChallenges(ctx); err != nil {
+			logRequestError(r.Context(), logger, "failed to migrate challenges", err, "")
+			writeError(w, http.StatusInternalServerError, "failed to migrate challenges")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"message": "successfully migrated challenges to firestore"})
 	}
 }
 
@@ -180,10 +211,18 @@ func getProfile(service user.Service, logger *slog.Logger) http.HandlerFunc {
 			return
 		}
 
+		timezone := r.Header.Get("X-Timezone")
+		if timezone == "" {
+			timezone = r.Header.Get("x-timezone")
+		}
+		if timezone == "" {
+			timezone = r.URL.Query().Get("timezone")
+		}
+
 		ctx, cancel := context.WithTimeout(r.Context(), serviceTimeout)
 		defer cancel()
 
-		profile, err := service.GetProfile(ctx, userID)
+		profile, err := service.GetProfile(ctx, userID, timezone)
 		if err != nil {
 			logRequestError(r.Context(), logger, "failed to load profile", err, userID)
 			writeError(w, http.StatusInternalServerError, "failed to load profile")
@@ -219,10 +258,18 @@ func updateProfile(service user.Service, logger *slog.Logger) http.HandlerFunc {
 			return
 		}
 
+		timezone := r.Header.Get("X-Timezone")
+		if timezone == "" {
+			timezone = r.Header.Get("x-timezone")
+		}
+		if timezone == "" {
+			timezone = r.URL.Query().Get("timezone")
+		}
+
 		ctx, cancel := context.WithTimeout(r.Context(), serviceTimeout)
 		defer cancel()
 
-		profile, err := service.UpdateProfile(ctx, userID, payload)
+		profile, err := service.UpdateProfile(ctx, userID, payload, timezone)
 		if err != nil {
 			logRequestError(r.Context(), logger, "failed to update profile", err, userID)
 			writeError(w, http.StatusInternalServerError, "failed to update profile")

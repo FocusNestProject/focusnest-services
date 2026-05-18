@@ -3,10 +3,31 @@ package user
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"golang.org/x/sync/errgroup"
 )
+
+func resolveLocation(tz string) *time.Location {
+	tz = strings.TrimSpace(tz)
+	if tz == "" {
+		loc, err := time.LoadLocation("Asia/Jakarta")
+		if err != nil {
+			return time.UTC
+		}
+		return loc
+	}
+	loc, err := time.LoadLocation(tz)
+	if err != nil {
+		loc, _ = time.LoadLocation("Asia/Jakarta")
+		if loc == nil {
+			return time.UTC
+		}
+		return loc
+	}
+	return loc
+}
 
 type service struct {
 	repo Repository
@@ -17,12 +38,13 @@ func NewService(repo Repository) Service {
 	return &service{repo: repo}
 }
 
-func (s *service) GetProfile(ctx context.Context, userID string) (*ProfileResponse, error) {
+func (s *service) GetProfile(ctx context.Context, userID string, timezone string) (*ProfileResponse, error) {
 	var (
 		profile  *Profile
 		metadata ProfileMetadata
 	)
 
+	loc := resolveLocation(timezone)
 	g, ctx := errgroup.WithContext(ctx)
 
 	g.Go(func() error {
@@ -35,7 +57,7 @@ func (s *service) GetProfile(ctx context.Context, userID string) (*ProfileRespon
 	})
 
 	g.Go(func() error {
-		m, err := s.repo.GetProfileMetadata(ctx, userID)
+		m, err := s.repo.GetProfileMetadata(ctx, userID, loc)
 		if err != nil {
 			return err
 		}
@@ -50,12 +72,13 @@ func (s *service) GetProfile(ctx context.Context, userID string) (*ProfileRespon
 	return buildProfileResponse(profile, metadata), nil
 }
 
-func (s *service) UpdateProfile(ctx context.Context, userID string, updates ProfileUpdateInput) (*ProfileResponse, error) {
+func (s *service) UpdateProfile(ctx context.Context, userID string, updates ProfileUpdateInput, timezone string) (*ProfileResponse, error) {
 	var (
 		updated  *Profile
 		metadata ProfileMetadata
 	)
 
+	loc := resolveLocation(timezone)
 	g, ctx := errgroup.WithContext(ctx)
 
 	g.Go(func() error {
@@ -68,7 +91,7 @@ func (s *service) UpdateProfile(ctx context.Context, userID string, updates Prof
 	})
 
 	g.Go(func() error {
-		m, err := s.repo.GetProfileMetadata(ctx, userID)
+		m, err := s.repo.GetProfileMetadata(ctx, userID, loc)
 		if err != nil {
 			return err
 		}
@@ -83,15 +106,21 @@ func (s *service) UpdateProfile(ctx context.Context, userID string, updates Prof
 	return buildProfileResponse(updated, metadata), nil
 }
 
-func (s *service) ListChallenges(_ context.Context) ([]ChallengeDefinition, error) {
-	// Static for now; returning a copy keeps callers from mutating.
-	defs := challengeDefinitions()
-	out := make([]ChallengeDefinition, len(defs))
-	copy(out, defs)
-	return out, nil
+func (s *service) ListChallenges(ctx context.Context) ([]ChallengeDefinition, error) {
+	return s.repo.ListChallenges(ctx)
 }
 
-func (s *service) GetChallengesMe(ctx context.Context, userID string) (*ChallengesMeResponse, error) {
+func (s *service) MigrateChallenges(ctx context.Context) error {
+	defs := challengeDefinitions()
+	for _, def := range defs {
+		if err := s.repo.CreateChallenge(ctx, def); err != nil {
+			return fmt.Errorf("failed to migrate challenge %s: %w", def.ID, err)
+		}
+	}
+	return nil
+}
+
+func (s *service) GetChallengesMe(ctx context.Context, userID string, timezone string) (*ChallengesMeResponse, error) {
 	if userID == "" {
 		return nil, fmt.Errorf("missing user id")
 	}
@@ -100,10 +129,10 @@ func (s *service) GetChallengesMe(ctx context.Context, userID string) (*Challeng
 	if err != nil {
 		return nil, err
 	}
-
-	loc, err := time.LoadLocation("Asia/Jakarta")
+	loc := resolveLocation(timezone)
+	metadata, err := s.repo.GetProfileMetadata(ctx, userID, loc)
 	if err != nil {
-		loc = time.UTC
+		return nil, err
 	}
 	now := time.Now().In(loc)
 	today := truncateToDay(now)
@@ -113,7 +142,7 @@ func (s *service) GetChallengesMe(ctx context.Context, userID string) (*Challeng
 	start := today.AddDate(0, 0, -45)
 	end := today.AddDate(0, 0, 1) // [start, end)
 
-	minsByDate, err := s.repo.GetDailyMinutesByDate(ctx, userID, start, end)
+	minsByDate, err := s.repo.GetDailyMinutesByDate(ctx, userID, start, end, loc)
 	if err != nil {
 		return nil, err
 	}
@@ -121,7 +150,11 @@ func (s *service) GetChallengesMe(ctx context.Context, userID string) (*Challeng
 	// Get week start (Monday) for weekly challenges
 	weekStart := getWeekStart(today)
 
-	defs := challengeDefinitions()
+	defs, err := s.repo.ListChallenges(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	statuses := make([]ChallengeStatus, 0, len(defs))
 	for _, def := range defs {
 		var progress ChallengeProgress
@@ -137,29 +170,35 @@ func (s *service) GetChallengesMe(ctx context.Context, userID string) (*Challeng
 			if err != nil {
 				return nil, err
 			}
-			progress = computeWeeklySharesProgress(def, shareCount)
-			completed = shareCount >= def.TargetCount
+			lastWeekCount, err := s.repo.GetWeeklyShareCount(ctx, userID, weekStart.AddDate(0, 0, -7))
+			if err != nil {
+				return nil, err
+			}
+			maxCount := shareCount
+			if lastWeekCount > maxCount {
+				maxCount = lastWeekCount
+			}
+			progress = computeWeeklySharesProgress(def, maxCount)
+			completed = maxCount >= def.TargetCount
 
 		case ChallengeRuleStreakMilestone:
-			currentStreak, err := s.repo.GetCurrentStreak(ctx, userID)
-			if err != nil {
-				return nil, err
-			}
-			progress = computeStreakMilestoneProgress(def, currentStreak)
-			completed = currentStreak >= def.TargetStreak
+			progress = computeStreakMilestoneProgress(def, metadata.LongestStreak)
+			completed = metadata.LongestStreak >= def.TargetStreak
 
 		case ChallengeRuleCyclesAndMindfulness:
-			// Get today's cycles and mindfulness minutes (challenge resets daily)
-			todayCycles, err := s.repo.GetTodayCycles(ctx, userID)
+			// Allow today or yesterday
+			todayCycles, err := s.repo.GetTodayCycles(ctx, userID, loc)
 			if err != nil {
 				return nil, err
 			}
-			todayMindfulnessMinutes, err := s.repo.GetTodayMindfulnessMinutes(ctx, userID)
+			todayMindfulness, err := s.repo.GetTodayMindfulnessMinutes(ctx, userID, loc)
 			if err != nil {
 				return nil, err
 			}
-			progress = computeCyclesAndMindfulnessProgress(def, todayCycles, todayMindfulnessMinutes)
-			completed = todayCycles >= def.TargetCycles && todayMindfulnessMinutes >= def.TargetMindfulnessMinutes
+			// (Ideally we'd check yesterday's cycles here too, but for auto-claim, today is sufficient if they open the app today. 
+			// We evaluate today)
+			progress = computeCyclesAndMindfulnessProgress(def, todayCycles, todayMindfulness)
+			completed = todayCycles >= def.TargetCycles && todayMindfulness >= def.TargetMindfulnessMinutes
 
 		default:
 			// Unknown challenge type; ignore for now.
@@ -169,6 +208,15 @@ func (s *service) GetChallengesMe(ctx context.Context, userID string) (*Challeng
 		claimed, err := s.repo.IsChallengeClaimed(ctx, userID, def.ID)
 		if err != nil {
 			return nil, err
+		}
+
+		// Auto-claim logic (Lazy auto-claim when accessed)
+		if completed && !claimed {
+			newTotal, _, alreadyClaimed, errClaim := s.repo.ClaimChallenge(ctx, userID, def.ID, def.RewardPoints)
+			if errClaim == nil && !alreadyClaimed {
+				claimed = true
+				profile.PointsTotal = newTotal // update local points total
+			}
 		}
 
 		statuses = append(statuses, ChallengeStatus{
@@ -186,7 +234,7 @@ func (s *service) GetChallengesMe(ctx context.Context, userID string) (*Challeng
 	}, nil
 }
 
-func (s *service) ClaimChallenge(ctx context.Context, userID, challengeID string) (*ClaimChallengeResponse, error) {
+func (s *service) ClaimChallenge(ctx context.Context, userID, challengeID string, timezone string) (*ClaimChallengeResponse, error) {
 	if userID == "" {
 		return nil, fmt.Errorf("missing user id")
 	}
@@ -196,7 +244,12 @@ func (s *service) ClaimChallenge(ctx context.Context, userID, challengeID string
 
 	// Validate challenge exists and fetch its definition.
 	var def *ChallengeDefinition
-	for _, c := range challengeDefinitions() {
+	defs, err := s.repo.ListChallenges(ctx)
+	if err != nil {
+		return nil, err
+	}
+	
+	for _, c := range defs {
 		if c.ID == challengeID {
 			copy := c
 			def = &copy
@@ -208,10 +261,7 @@ func (s *service) ClaimChallenge(ctx context.Context, userID, challengeID string
 	}
 
 	// Ensure it is completed before awarding points.
-	loc, err := time.LoadLocation("Asia/Jakarta")
-	if err != nil {
-		loc = time.UTC
-	}
+	loc := resolveLocation(timezone)
 	now := time.Now().In(loc)
 	today := truncateToDay(now)
 
@@ -221,7 +271,7 @@ func (s *service) ClaimChallenge(ctx context.Context, userID, challengeID string
 	case ChallengeRuleDailyMinutesStreak:
 		start := today.AddDate(0, 0, -45)
 		end := today.AddDate(0, 0, 1)
-		minsByDate, err := s.repo.GetDailyMinutesByDate(ctx, userID, start, end)
+		minsByDate, err := s.repo.GetDailyMinutesByDate(ctx, userID, start, end, loc)
 		if err != nil {
 			return nil, err
 		}
@@ -234,22 +284,30 @@ func (s *service) ClaimChallenge(ctx context.Context, userID, challengeID string
 		if err != nil {
 			return nil, err
 		}
-		eligible = shareCount >= def.TargetCount
-
-	case ChallengeRuleStreakMilestone:
-		currentStreak, err := s.repo.GetCurrentStreak(ctx, userID)
+		lastWeekCount, err := s.repo.GetWeeklyShareCount(ctx, userID, weekStart.AddDate(0, 0, -7))
 		if err != nil {
 			return nil, err
 		}
-		eligible = currentStreak >= def.TargetStreak
+		maxCount := shareCount
+		if lastWeekCount > maxCount {
+			maxCount = lastWeekCount
+		}
+		eligible = maxCount >= def.TargetCount
+
+	case ChallengeRuleStreakMilestone:
+		metadata, err := s.repo.GetProfileMetadata(ctx, userID, loc)
+		if err != nil {
+			return nil, err
+		}
+		eligible = metadata.LongestStreak >= def.TargetStreak
 
 	case ChallengeRuleCyclesAndMindfulness:
 		// Get today's cycles and mindfulness minutes (challenge resets daily)
-		todayCycles, err := s.repo.GetTodayCycles(ctx, userID)
+		todayCycles, err := s.repo.GetTodayCycles(ctx, userID, loc)
 		if err != nil {
 			return nil, err
 		}
-		todayMindfulnessMinutes, err := s.repo.GetTodayMindfulnessMinutes(ctx, userID)
+		todayMindfulnessMinutes, err := s.repo.GetTodayMindfulnessMinutes(ctx, userID, loc)
 		if err != nil {
 			return nil, err
 		}
@@ -337,27 +395,31 @@ func computeDailyMinutesStreakProgress(def ChallengeDefinition, minsByDate map[s
 	minPerDay := def.MinMinutesPerDay
 	targetDays := def.ConsecutiveDays
 
-	// Current streak ending today (in local time).
-	streak := 0
-	for i := 0; i < 90; i++ { // safety cap
+	// Find the longest streak in the entire 45-day window.
+	maxStreak := 0
+	currentStreak := 0
+	for i := 45; i >= 0; i-- { // iterate chronologically
 		day := today.AddDate(0, 0, -i)
 		key := day.Format("2006-01-02")
 		mins := minsByDate[key]
 		if mins >= minPerDay {
-			streak++
-			continue
+			currentStreak++
+			if currentStreak > maxStreak {
+				maxStreak = currentStreak
+			}
+		} else {
+			currentStreak = 0
 		}
-		break
 	}
 
 	minsToday := minsByDate[today.Format("2006-01-02")]
-	percent := (streak * 100) / targetDays
+	percent := (maxStreak * 100) / targetDays
 	if percent > 100 {
 		percent = 100
 	}
 
 	return ChallengeProgress{
-		CurrentStreakDays: streak,
+		CurrentStreakDays: maxStreak,
 		TargetStreakDays:  targetDays,
 		MinMinutesPerDay:  minPerDay,
 		MinutesToday:      minsToday,
