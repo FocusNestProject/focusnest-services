@@ -42,7 +42,7 @@ func main() {
 		// Truncate to start of day for summary
 		dateKey := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, loc)
 		
-		_, err := client.Collection("daily_summaries").Add(ctx, map[string]interface{}{
+		_, _, err := client.Collection("daily_summaries").Add(ctx, map[string]interface{}{
 			"user_id":    userID,
 			"date":       dateKey,
 			"total_time": 130, // 130 minutes ( > 120 target)
