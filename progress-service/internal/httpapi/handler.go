@@ -60,6 +60,14 @@ func getSummary(service progress.Service) http.HandlerFunc {
 			reference = t
 		}
 
+		timezone := r.Header.Get("X-Timezone")
+		if timezone == "" {
+			timezone = r.Header.Get("x-timezone")
+		}
+		if timezone == "" {
+			timezone = r.URL.Query().Get("timezone")
+		}
+
 		ctx, cancel := context.WithTimeout(r.Context(), serviceTimeout)
 		defer cancel()
 
@@ -67,6 +75,7 @@ func getSummary(service progress.Service) http.HandlerFunc {
 			Range:         progress.SummaryRange(rangeParam),
 			Category:      category,
 			ReferenceDate: reference,
+			Timezone:      timezone,
 		})
 		if err != nil {
 			status := http.StatusInternalServerError
@@ -105,10 +114,18 @@ func getMonthlyStreak(service progress.Service) http.HandlerFunc {
 			return
 		}
 
+		timezone := r.Header.Get("X-Timezone")
+		if timezone == "" {
+			timezone = r.Header.Get("x-timezone")
+		}
+		if timezone == "" {
+			timezone = r.URL.Query().Get("timezone")
+		}
+
 		ctx, cancel := context.WithTimeout(r.Context(), serviceTimeout)
 		defer cancel()
 
-		data, err := service.GetMonthlyStreak(ctx, userID, int(month), year)
+		data, err := service.GetMonthlyStreak(ctx, userID, int(month), year, timezone)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "internal server error")
 			return
@@ -134,10 +151,18 @@ func getWeeklyStreak(service progress.Service) http.HandlerFunc {
 		}
 		target = startOfDayUTC(target.UTC())
 
+		timezone := r.Header.Get("X-Timezone")
+		if timezone == "" {
+			timezone = r.Header.Get("x-timezone")
+		}
+		if timezone == "" {
+			timezone = r.URL.Query().Get("timezone")
+		}
+
 		ctx, cancel := context.WithTimeout(r.Context(), serviceTimeout)
 		defer cancel()
 
-		data, err := service.GetWeeklyStreak(ctx, userID, target)
+		data, err := service.GetWeeklyStreak(ctx, userID, target, timezone)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "internal server error")
 			return

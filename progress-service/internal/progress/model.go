@@ -77,6 +77,7 @@ type SummaryInput struct {
 	Range         SummaryRange
 	Category      string
 	ReferenceDate time.Time
+	Timezone      string
 }
 
 // SummaryBucket represents a distribution bucket.
@@ -144,8 +145,8 @@ type Repository interface {
 // Service defines the progress service interface
 type Service interface {
 	GetProgress(ctx context.Context, userID string, startDate, endDate time.Time) (*ProgressStats, error)
-	GetMonthlyStreak(ctx context.Context, userID string, month, year int) (*MonthlyStreakData, error)
-	GetWeeklyStreak(ctx context.Context, userID string, targetDate time.Time) (*WeeklyStreakData, error)
+	GetMonthlyStreak(ctx context.Context, userID string, month, year int, timezone string) (*MonthlyStreakData, error)
+	GetWeeklyStreak(ctx context.Context, userID string, targetDate time.Time, timezone string) (*WeeklyStreakData, error)
 	GetCurrentStreak(ctx context.Context, userID string, timezone string) (*StreakData, error)
 	RecoverStreak(ctx context.Context, userID string, isPremium bool, timezone string) (*StreakData, error)
 	GetSummary(ctx context.Context, userID string, input SummaryInput) (*SummaryResponse, error)

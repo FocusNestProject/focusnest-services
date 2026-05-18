@@ -48,11 +48,12 @@ func (s *service) GetSummary(ctx context.Context, userID string, input SummaryIn
 	if rng == "" {
 		rng = SummaryRangeWeek
 	}
+	loc := s.resolveLocation(input.Timezone)
 	ref := input.ReferenceDate
 	if ref.IsZero() {
-		ref = time.Now().In(s.loc)
+		ref = time.Now().In(loc)
 	} else {
-		ref = ref.In(s.loc)
+		ref = ref.In(loc)
 	}
 	startLocal, endLocal, err := s.summaryBounds(rng, ref)
 	if err != nil {
@@ -77,8 +78,8 @@ func (s *service) GetSummary(ctx context.Context, userID string, input SummaryIn
 			filtered = append(filtered, entry)
 		}
 	}
-	distribution := s.buildDistribution(rng, startLocal, ref, filtered)
-	prodStart, prodEnd := s.calculateMostProductiveHour(filtered, ref)
+	distribution := s.buildDistribution(rng, startLocal, ref, filtered, loc)
+	prodStart, prodEnd := s.calculateMostProductiveHour(filtered, ref, loc)
 	return &SummaryResponse{
 		Range:                   rng,
 		ReferenceDate:           ref,
@@ -93,9 +94,10 @@ func (s *service) GetSummary(ctx context.Context, userID string, input SummaryIn
 }
 
 // GetMonthlyStreak returns monthly streak data
-func (s *service) GetMonthlyStreak(ctx context.Context, userID string, month, year int) (*MonthlyStreakData, error) {
+func (s *service) GetMonthlyStreak(ctx context.Context, userID string, month, year int, timezone string) (*MonthlyStreakData, error) {
+	loc := s.resolveLocation(timezone)
 	// Calculate local month boundaries in service location, then rely on repo using those as-is
-	monthStart := time.Date(year, time.Month(month), 1, 0, 0, 0, 0, s.loc)
+	monthStart := time.Date(year, time.Month(month), 1, 0, 0, 0, 0, loc)
 	monthEnd := monthStart.AddDate(0, 1, 0)
 
 	// For Firestore queries it's common to store UTC; here we assume caller passes UTC boundaries if needed.
@@ -108,13 +110,13 @@ func (s *service) GetMonthlyStreak(ctx context.Context, userID string, month, ye
 	// Create day status map
 	dayMap := make(map[string]bool)
 	for _, summary := range summaries {
-		dayStr := summary.Date.In(s.loc).Format("2006-01-02")
+		dayStr := summary.Date.In(loc).Format("2006-01-02")
 		dayMap[dayStr] = true
 	}
 
 	// Generate all days in the month
 	days := make([]DayStatus, 0)
-	now := time.Now().In(s.loc)
+	now := time.Now().In(loc)
 
 	for d := monthStart; d.Before(monthEnd); d = d.AddDate(0, 0, 1) {
 		dayStr := d.Format("2006-01-02")
@@ -149,8 +151,9 @@ func (s *service) GetMonthlyStreak(ctx context.Context, userID string, month, ye
 }
 
 // GetWeeklyStreak returns weekly streak data (Monday–Sunday)
-func (s *service) GetWeeklyStreak(ctx context.Context, userID string, targetDate time.Time) (*WeeklyStreakData, error) {
-	td := targetDate.In(s.loc)
+func (s *service) GetWeeklyStreak(ctx context.Context, userID string, targetDate time.Time, timezone string) (*WeeklyStreakData, error) {
+	loc := s.resolveLocation(timezone)
+	td := targetDate.In(loc)
 	weekStart := truncateToDay(td)
 	for weekStart.Weekday() != time.Monday {
 		weekStart = weekStart.AddDate(0, 0, -1)
@@ -164,12 +167,12 @@ func (s *service) GetWeeklyStreak(ctx context.Context, userID string, targetDate
 
 	dayMap := make(map[string]bool)
 	for _, summary := range summaries {
-		dayStr := summary.Date.In(s.loc).Format("2006-01-02")
+		dayStr := summary.Date.In(loc).Format("2006-01-02")
 		dayMap[dayStr] = true
 	}
 
 	days := make([]DayStatus, 0)
-	now := time.Now().In(s.loc)
+	now := time.Now().In(loc)
 
 	for d := weekStart; d.Before(weekEnd); d = d.AddDate(0, 0, 1) {
 		dayStr := d.Format("2006-01-02")
@@ -532,29 +535,29 @@ func (s *service) summaryBounds(rng SummaryRange, ref time.Time) (time.Time, tim
 	}
 }
 
-func (s *service) buildDistribution(rng SummaryRange, start, ref time.Time, entries []ProductivityEntry) []SummaryBucket {
+func (s *service) buildDistribution(rng SummaryRange, start, ref time.Time, entries []ProductivityEntry, loc *time.Location) []SummaryBucket {
 	switch rng {
 	case SummaryRangeWeek:
-		return s.buildWeekDistribution(start, entries)
+		return s.buildWeekDistribution(start, entries, loc)
 	case SummaryRangeMonth:
-		return s.buildMonthDistribution(entries)
+		return s.buildMonthDistribution(entries, loc)
 	case SummaryRangeQuarter:
-		return s.buildQuarterDistribution(ref, entries)
+		return s.buildQuarterDistribution(ref, entries, loc)
 	case SummaryRangeYear:
-		return s.buildYearDistribution(entries)
+		return s.buildYearDistribution(entries, loc)
 	default:
 		return nil
 	}
 }
 
-func (s *service) buildWeekDistribution(start time.Time, entries []ProductivityEntry) []SummaryBucket {
+func (s *service) buildWeekDistribution(start time.Time, entries []ProductivityEntry, loc *time.Location) []SummaryBucket {
 	labels := []string{"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"}
 	buckets := make([]SummaryBucket, len(labels))
 	for i, label := range labels {
 		buckets[i] = SummaryBucket{Label: label}
 	}
 	for _, entry := range entries {
-		day := truncateToDay(entry.StartTime.In(s.loc))
+		day := truncateToDay(entry.StartTime.In(loc))
 		delta := int(day.Sub(start).Hours() / 24)
 		if delta < 0 || delta >= len(buckets) {
 			continue
@@ -564,14 +567,14 @@ func (s *service) buildWeekDistribution(start time.Time, entries []ProductivityE
 	return buckets
 }
 
-func (s *service) buildMonthDistribution(entries []ProductivityEntry) []SummaryBucket {
+func (s *service) buildMonthDistribution(entries []ProductivityEntry, loc *time.Location) []SummaryBucket {
 	labels := []string{"Week1", "Week2", "Week3", "Week4"}
 	buckets := make([]SummaryBucket, len(labels))
 	for i, label := range labels {
 		buckets[i] = SummaryBucket{Label: label}
 	}
 	for _, entry := range entries {
-		day := entry.StartTime.In(s.loc).Day()
+		day := entry.StartTime.In(loc).Day()
 		idx := (day - 1) / 7
 		if idx < 0 {
 			idx = 0
@@ -584,11 +587,11 @@ func (s *service) buildMonthDistribution(entries []ProductivityEntry) []SummaryB
 	return buckets
 }
 
-func (s *service) buildQuarterDistribution(ref time.Time, entries []ProductivityEntry) []SummaryBucket {
+func (s *service) buildQuarterDistribution(ref time.Time, entries []ProductivityEntry, loc *time.Location) []SummaryBucket {
 	start := time.Date(ref.Year(), ref.Month(), 1, 0, 0, 0, 0, ref.Location()).AddDate(0, -2, 0)
 	buckets := []SummaryBucket{{Label: "Month1"}, {Label: "Month2"}, {Label: "Month3"}}
 	for _, entry := range entries {
-		months := monthsBetween(start, entry.StartTime.In(s.loc))
+		months := monthsBetween(start, entry.StartTime.In(loc))
 		if months < 0 || months >= len(buckets) {
 			continue
 		}
@@ -597,10 +600,10 @@ func (s *service) buildQuarterDistribution(ref time.Time, entries []Productivity
 	return buckets
 }
 
-func (s *service) buildYearDistribution(entries []ProductivityEntry) []SummaryBucket {
+func (s *service) buildYearDistribution(entries []ProductivityEntry, loc *time.Location) []SummaryBucket {
 	buckets := []SummaryBucket{{Label: "Q1"}, {Label: "Q2"}, {Label: "Q3"}, {Label: "Q4"}}
 	for _, entry := range entries {
-		month := int(entry.StartTime.In(s.loc).Month())
+		month := int(entry.StartTime.In(loc).Month())
 		idx := (month - 1) / 3
 		if idx < 0 || idx >= len(buckets) {
 			continue
@@ -616,14 +619,14 @@ func monthsBetween(start, t time.Time) int {
 	return (tYear-startYear)*12 + int(tMonth-startMonth)
 }
 
-func (s *service) calculateMostProductiveHour(entries []ProductivityEntry, reference time.Time) (*time.Time, *time.Time) {
+func (s *service) calculateMostProductiveHour(entries []ProductivityEntry, reference time.Time, loc *time.Location) (*time.Time, *time.Time) {
 	if len(entries) == 0 {
 		return nil, nil
 	}
 	totals := make(map[time.Time]int)
 	for _, entry := range entries {
-		start := entry.StartTime.In(s.loc)
-		end := entry.EndTime.In(s.loc)
+		start := entry.StartTime.In(loc)
+		end := entry.EndTime.In(loc)
 		if end.IsZero() || !end.After(start) {
 			if entry.TimeElapsed > 0 {
 				end = start.Add(time.Duration(entry.TimeElapsed) * time.Second)
@@ -633,7 +636,7 @@ func (s *service) calculateMostProductiveHour(entries []ProductivityEntry, refer
 		}
 		current := start
 		for current.Before(end) {
-			hourStart := time.Date(current.Year(), current.Month(), current.Day(), current.Hour(), 0, 0, 0, s.loc)
+			hourStart := time.Date(current.Year(), current.Month(), current.Day(), current.Hour(), 0, 0, 0, loc)
 			hourEnd := hourStart.Add(time.Hour)
 			if hourEnd.After(end) {
 				hourEnd = end
