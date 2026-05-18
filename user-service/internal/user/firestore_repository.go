@@ -493,15 +493,13 @@ func (r *firestoreRepository) GetCurrentStreak(ctx context.Context, userID strin
 	return streak, nil
 }
 
-// GetTodayCycles returns the total number of work cycles completed by the user today.
-func (r *firestoreRepository) GetTodayCycles(ctx context.Context, userID string, loc *time.Location) (int, error) {
+// GetCyclesByDate returns the total number of work cycles completed by the user on a specific date.
+func (r *firestoreRepository) GetCyclesByDate(ctx context.Context, userID string, date time.Time, loc *time.Location) (int, error) {
 	if userID == "" {
 		return 0, nil
 	}
 
-	// Get start and end of today in user's timezone (Asia/Jakarta)
-	now := time.Now().In(loc)
-	startOfDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
+	startOfDay := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, loc)
 	endOfDay := startOfDay.Add(24 * time.Hour)
 
 	query := r.productivitiesQuery(userID).
@@ -538,15 +536,13 @@ func (r *firestoreRepository) GetTodayCycles(ctx context.Context, userID string,
 	return totalCycles, nil
 }
 
-// GetTodayMindfulnessMinutes returns the total mindfulness minutes for the user today.
-func (r *firestoreRepository) GetTodayMindfulnessMinutes(ctx context.Context, userID string, loc *time.Location) (int, error) {
+// GetMindfulnessMinutesByDate returns the total mindfulness minutes for the user on a specific date.
+func (r *firestoreRepository) GetMindfulnessMinutesByDate(ctx context.Context, userID string, date time.Time, loc *time.Location) (int, error) {
 	if userID == "" {
 		return 0, nil
 	}
 
-	// Get start and end of today in user's timezone (Asia/Jakarta)
-	now := time.Now().In(loc)
-	startOfDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
+	startOfDay := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, loc)
 	endOfDay := startOfDay.Add(24 * time.Hour)
 
 	iter := r.client.Collection("profiles").Doc(userID).Collection("mindfulness").

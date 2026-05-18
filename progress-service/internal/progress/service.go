@@ -551,14 +551,26 @@ func (s *service) buildDistribution(rng SummaryRange, start, ref time.Time, entr
 }
 
 func (s *service) buildWeekDistribution(start time.Time, entries []ProductivityEntry, loc *time.Location) []SummaryBucket {
+	// labels represent Monday to Sunday
 	labels := []string{"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"}
 	buckets := make([]SummaryBucket, len(labels))
 	for i, label := range labels {
 		buckets[i] = SummaryBucket{Label: label}
 	}
+
+	// Normalize start time to the beginning of the day in local time
+	localStart := truncateToDay(start.In(loc))
+
 	for _, entry := range entries {
-		day := truncateToDay(entry.StartTime.In(loc))
-		delta := int(day.Sub(start).Hours() / 24)
+		// Convert entry time to local timezone
+		entryTime := entry.StartTime.In(loc)
+		entryDay := truncateToDay(entryTime)
+
+		// Calculate days since the Monday start
+		// Use Hours() and divide by 24 to get a stable day delta
+		diff := entryDay.Sub(localStart).Hours()
+		delta := int(diff / 24)
+
 		if delta < 0 || delta >= len(buckets) {
 			continue
 		}

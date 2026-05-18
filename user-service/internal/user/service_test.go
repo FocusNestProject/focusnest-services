@@ -19,8 +19,8 @@ type fakeRepo struct {
 	getWeeklyShareCountFn        func(context.Context, string, time.Time) (int, error)
 	recordShareFn                func(context.Context, string, string) error
 	getCurrentStreakFn           func(context.Context, string, *time.Location) (int, error)
-	getTodayCyclesFn             func(context.Context, string, *time.Location) (int, error)
-	getTodayMindfulnessMinutesFn func(context.Context, string, *time.Location) (int, error)
+	getCyclesByDateFn            func(context.Context, string, time.Time, *time.Location) (int, error)
+	getMindfulnessMinutesByDateFn func(context.Context, string, time.Time, *time.Location) (int, error)
 	recordMindfulnessFn          func(context.Context, string, int) error
 }
 
@@ -101,16 +101,16 @@ func (f *fakeRepo) GetCurrentStreak(ctx context.Context, userID string, loc *tim
 	return 0, nil
 }
 
-func (f *fakeRepo) GetTodayCycles(ctx context.Context, userID string, loc *time.Location) (int, error) {
-	if f.getTodayCyclesFn != nil {
-		return f.getTodayCyclesFn(ctx, userID, loc)
+func (f *fakeRepo) GetCyclesByDate(ctx context.Context, userID string, date time.Time, loc *time.Location) (int, error) {
+	if f.getCyclesByDateFn != nil {
+		return f.getCyclesByDateFn(ctx, userID, date, loc)
 	}
 	return 0, nil
 }
 
-func (f *fakeRepo) GetTodayMindfulnessMinutes(ctx context.Context, userID string, loc *time.Location) (int, error) {
-	if f.getTodayMindfulnessMinutesFn != nil {
-		return f.getTodayMindfulnessMinutesFn(ctx, userID, loc)
+func (f *fakeRepo) GetMindfulnessMinutesByDate(ctx context.Context, userID string, date time.Time, loc *time.Location) (int, error) {
+	if f.getMindfulnessMinutesByDateFn != nil {
+		return f.getMindfulnessMinutesByDateFn(ctx, userID, date, loc)
 	}
 	return 0, nil
 }
@@ -260,10 +260,10 @@ func TestServiceGetChallengesMe_ComplexRules(t *testing.T) {
 		getWeeklyShareCountFn: func(ctx context.Context, userID string, weekStart time.Time) (int, error) {
 			return 3, nil // Meets target
 		},
-		getTodayCyclesFn: func(ctx context.Context, userID string, loc *time.Location) (int, error) {
+		getCyclesByDateFn: func(ctx context.Context, userID string, date time.Time, loc *time.Location) (int, error) {
 			return 4, nil // Meets target
 		},
-		getTodayMindfulnessMinutesFn: func(ctx context.Context, userID string, loc *time.Location) (int, error) {
+		getMindfulnessMinutesByDateFn: func(ctx context.Context, userID string, date time.Time, loc *time.Location) (int, error) {
 			return 2, nil // Meets target
 		},
 		listChallengesFn: func(ctx context.Context) ([]ChallengeDefinition, error) {

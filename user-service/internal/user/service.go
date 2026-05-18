@@ -186,19 +186,37 @@ func (s *service) GetChallengesMe(ctx context.Context, userID string, timezone s
 			completed = metadata.LongestStreak >= def.TargetStreak
 
 		case ChallengeRuleCyclesAndMindfulness:
-			// Allow today or yesterday
-			todayCycles, err := s.repo.GetTodayCycles(ctx, userID, loc)
+			// Allow today or yesterday (to handle users opening the app after midnight)
+			todayCycles, err := s.repo.GetCyclesByDate(ctx, userID, today, loc)
 			if err != nil {
 				return nil, err
 			}
-			todayMindfulness, err := s.repo.GetTodayMindfulnessMinutes(ctx, userID, loc)
+			todayMindfulness, err := s.repo.GetMindfulnessMinutesByDate(ctx, userID, today, loc)
 			if err != nil {
 				return nil, err
 			}
-			// (Ideally we'd check yesterday's cycles here too, but for auto-claim, today is sufficient if they open the app today. 
-			// We evaluate today)
-			progress = computeCyclesAndMindfulnessProgress(def, todayCycles, todayMindfulness)
-			completed = todayCycles >= def.TargetCycles && todayMindfulness >= def.TargetMindfulnessMinutes
+
+			yesterday := today.AddDate(0, 0, -1)
+			yesterdayCycles, err := s.repo.GetCyclesByDate(ctx, userID, yesterday, loc)
+			if err != nil {
+				return nil, err
+			}
+			yesterdayMindfulness, err := s.repo.GetMindfulnessMinutesByDate(ctx, userID, yesterday, loc)
+			if err != nil {
+				return nil, err
+			}
+
+			// Maximize progress from either today or yesterday
+			progressToday := computeCyclesAndMindfulnessProgress(def, todayCycles, todayMindfulness)
+			progressYesterday := computeCyclesAndMindfulnessProgress(def, yesterdayCycles, yesterdayMindfulness)
+
+			if progressYesterday.ProgressPercent > progressToday.ProgressPercent {
+				progress = progressYesterday
+				completed = yesterdayCycles >= def.TargetCycles && yesterdayMindfulness >= def.TargetMindfulnessMinutes
+			} else {
+				progress = progressToday
+				completed = todayCycles >= def.TargetCycles && todayMindfulness >= def.TargetMindfulnessMinutes
+			}
 
 		default:
 			// Unknown challenge type; ignore for now.
@@ -302,16 +320,30 @@ func (s *service) ClaimChallenge(ctx context.Context, userID, challengeID string
 		eligible = metadata.LongestStreak >= def.TargetStreak
 
 	case ChallengeRuleCyclesAndMindfulness:
-		// Get today's cycles and mindfulness minutes (challenge resets daily)
-		todayCycles, err := s.repo.GetTodayCycles(ctx, userID, loc)
+		// Check today
+		todayCycles, err := s.repo.GetCyclesByDate(ctx, userID, today, loc)
 		if err != nil {
 			return nil, err
 		}
-		todayMindfulnessMinutes, err := s.repo.GetTodayMindfulnessMinutes(ctx, userID, loc)
+		todayMindfulness, err := s.repo.GetMindfulnessMinutesByDate(ctx, userID, today, loc)
 		if err != nil {
 			return nil, err
 		}
-		eligible = todayCycles >= def.TargetCycles && todayMindfulnessMinutes >= def.TargetMindfulnessMinutes
+		eligible = todayCycles >= def.TargetCycles && todayMindfulness >= def.TargetMindfulnessMinutes
+
+		if !eligible {
+			// Check yesterday as backup
+			yesterday := today.AddDate(0, 0, -1)
+			yesterdayCycles, err := s.repo.GetCyclesByDate(ctx, userID, yesterday, loc)
+			if err != nil {
+				return nil, err
+			}
+			yesterdayMindfulness, err := s.repo.GetMindfulnessMinutesByDate(ctx, userID, yesterday, loc)
+			if err != nil {
+				return nil, err
+			}
+			eligible = yesterdayCycles >= def.TargetCycles && yesterdayMindfulness >= def.TargetMindfulnessMinutes
+		}
 
 	default:
 		return nil, fmt.Errorf("unsupported challenge type")
