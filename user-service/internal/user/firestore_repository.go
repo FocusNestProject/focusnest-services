@@ -154,43 +154,9 @@ func (r *firestoreRepository) productivitiesQuery(userID string) firestore.Query
 }
 
 func (r *firestoreRepository) GetDailyMinutesByDate(ctx context.Context, userID string, startDate, endDate time.Time, loc *time.Location) (map[string]int, error) {
-	// Primary source: daily_summaries (same schema as progress-service).
-	iter := r.client.Collection("daily_summaries").
-		Where("user_id", "==", userID).
-		Where("date", ">=", startDate).
-		Where("date", "<", endDate).
-		OrderBy("date", firestore.Asc).
-		Documents(ctx)
-
-	defer iter.Stop()
-
+	// Always aggregate from productivities (single source of truth).
+	// daily_summaries is not maintained by the app and may contain stale simulation data.
 	minsByDate := make(map[string]int)
-	found := 0
-	for {
-		doc, err := iter.Next()
-		if err == iterator.Done {
-			break
-		}
-		if err != nil {
-			return nil, err
-		}
-		var summary struct {
-			Date      time.Time `firestore:"date"`
-			TotalTime int       `firestore:"total_time"` // minutes
-		}
-		if err := doc.DataTo(&summary); err != nil {
-			continue
-		}
-		key := summary.Date.In(loc).Format("2006-01-02")
-		minsByDate[key] = summary.TotalTime
-		found++
-	}
-
-	if found > 0 {
-		return minsByDate, nil
-	}
-
-	// Fallback: aggregate from productivities (only within the requested window).
 	entries, err := r.fetchProductivitiesForWindow(ctx, userID, startDate, endDate)
 	if err != nil {
 		return nil, err

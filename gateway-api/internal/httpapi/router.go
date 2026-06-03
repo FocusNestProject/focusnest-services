@@ -45,13 +45,28 @@ func Router(verifier auth.Verifier, targets Targets, premiumChecker *revenuecat.
 		r.Use(injectUserIDHeader())
 
 		// Routing table (matches the root handbook).
-		r.Mount("/v1/productivities", proxyHandler(targets.Activity, nil, logger))
-		r.Mount("/v1/progress", proxyHandler(targets.Analytics, premiumChecker, logger))
-		r.Mount("/v1/chatbot", proxyHandler(targets.Chatbot, nil, logger))
-		r.Mount("/v1/users", proxyHandler(targets.User, nil, logger))
-		r.Mount("/v1/challenges", proxyHandler(targets.User, nil, logger))
-		r.Mount("/v1/shares", proxyHandler(targets.User, nil, logger))
-		r.Mount("/v1/mindfulness", proxyHandler(targets.User, nil, logger))
+		// We use standard wildcard handlers instead of r.Mount to avoid Chi's automatic path-stripping behavior,
+		// ensuring downstream microservices receive the full unstripped path natively.
+		r.Handle("/v1/productivities", proxyHandler(targets.Activity, nil, logger))
+		r.Handle("/v1/productivities/*", proxyHandler(targets.Activity, nil, logger))
+
+		r.Handle("/v1/progress", proxyHandler(targets.Analytics, premiumChecker, logger))
+		r.Handle("/v1/progress/*", proxyHandler(targets.Analytics, premiumChecker, logger))
+
+		r.Handle("/v1/chatbot", proxyHandler(targets.Chatbot, nil, logger))
+		r.Handle("/v1/chatbot/*", proxyHandler(targets.Chatbot, nil, logger))
+
+		r.Handle("/v1/users", proxyHandler(targets.User, nil, logger))
+		r.Handle("/v1/users/*", proxyHandler(targets.User, nil, logger))
+
+		r.Handle("/v1/challenges", proxyHandler(targets.User, nil, logger))
+		r.Handle("/v1/challenges/*", proxyHandler(targets.User, nil, logger))
+
+		r.Handle("/v1/shares", proxyHandler(targets.User, nil, logger))
+		r.Handle("/v1/shares/*", proxyHandler(targets.User, nil, logger))
+
+		r.Handle("/v1/mindfulness", proxyHandler(targets.User, nil, logger))
+		r.Handle("/v1/mindfulness/*", proxyHandler(targets.User, nil, logger))
 
 		// Feedback — handled directly in the gateway (Resend + Firestore).
 		if feedbackHandler != nil {
@@ -94,7 +109,8 @@ func proxyHandler(target *url.URL, premiumChecker *revenuecat.Client, logger *sl
 	origDirector := proxy.Director
 	proxy.Director = func(req *http.Request) {
 		origDirector(req)
-		// Ensure the upstream sees the right Host and preserve original path.
+
+		// Ensure the upstream sees the right Host.
 		req.Host = target.Host
 
 		// For POST /v1/progress/streak/recover: verify premium with RevenueCat and set X-Premium

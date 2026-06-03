@@ -27,41 +27,9 @@ func NewFirestoreRepository(client *firestore.Client) Repository {
 }
 
 func (r *firestoreRepository) GetDailySummaries(ctx context.Context, userID string, startDate, endDate time.Time) ([]*DailySummary, error) {
-	// Use [start, end) everywhere for consistency
-	iter := r.client.Collection("daily_summaries").
-		Where("user_id", "==", userID).
-		Where("date", ">=", startDate).
-		Where("date", "<", endDate).
-		OrderBy("date", firestore.Asc).
-		Documents(ctx)
-
-	var summaries []*DailySummary
-	for {
-		doc, err := iter.Next()
-		if err == iterator.Done {
-			break
-		}
-		if err != nil {
-			return nil, err
-		}
-
-		var summary DailySummary
-		if err := doc.DataTo(&summary); err != nil {
-			return nil, fmt.Errorf("unmarshal summary: %w", err)
-		}
-		// Ensure not persisted; but we expose the doc id to caller
-		summary.ID = doc.Ref.ID
-		if summary.Categories == nil {
-			summary.Categories = map[string]int{}
-		}
-		summaries = append(summaries, &summary)
-	}
-
-	// If no daily summaries found, aggregate from productivities
-	if len(summaries) == 0 {
-		return r.aggregateFromProductivities(ctx, userID, startDate, endDate)
-	}
-	return summaries, nil
+	// Always aggregate from productivities (single source of truth).
+	// daily_summaries is not maintained by the app flow and may contain stale data.
+	return r.aggregateFromProductivities(ctx, userID, startDate, endDate)
 }
 
 // aggregateFromProductivities reads from productivities collection and creates daily summaries
