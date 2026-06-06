@@ -47,11 +47,13 @@ type StreakData struct {
 
 // StreakState is persisted per user for expired/grace and recovery override.
 type StreakState struct {
-	UserID                 string `firestore:"user_id"`
-	ExpiredAt              string `firestore:"expired_at"`               // YYYY-MM-DD when streak expired
-	StreakValueBeforeExpired int   `firestore:"streak_value_before_expired"`
-	OverrideStreakValue    int    `firestore:"override_streak_value"`    // after recovery, show this until next activity
-	UpdatedAt              time.Time `firestore:"updated_at"`
+	UserID                   string    `firestore:"user_id"`
+	ExpiredAt                string    `firestore:"expired_at"`               // YYYY-MM-DD when streak expired
+	StreakValueBeforeExpired int       `firestore:"streak_value_before_expired"`
+	OverrideStreakValue      int       `firestore:"override_streak_value"`    // after recovery, show this until next activity
+	CurrentGlobalStreak      int       `firestore:"current_global_streak"`    // cache of current active streak
+	LastProductiveDate       string    `firestore:"last_productive_date"`     // YYYY-MM-DD of last cached active streak day
+	UpdatedAt                time.Time `firestore:"updated_at"`
 }
 
 // RecoveryQuota is recovery count per user per month (reset on 1st).

@@ -139,7 +139,14 @@ func (s *service) GetMonthlyStreak(ctx context.Context, userID string, month, ye
 	}
 
 	// Calculate streaks
-	totalStreak, currentStreak := s.calculateStreaks(days, now)
+	totalStreak, currentStreak, overflows := s.calculateStreaks(days, now)
+	lastProd := getLastProductiveDate(days, truncateToDay(now))
+	if overflows && lastProd != "" {
+		currentStreak = s.getTrueGlobalStreak(ctx, userID, lastProd, loc, false)
+		if currentStreak > totalStreak {
+			totalStreak = currentStreak
+		}
+	}
 
 	return &MonthlyStreakData{
 		Month:         month,
@@ -195,7 +202,14 @@ func (s *service) GetWeeklyStreak(ctx context.Context, userID string, targetDate
 	}
 
 	// Calculate streaks
-	totalStreak, currentStreak := s.calculateStreaks(days, now)
+	totalStreak, currentStreak, overflows := s.calculateStreaks(days, now)
+	lastProd := getLastProductiveDate(days, truncateToDay(now))
+	if overflows && lastProd != "" {
+		currentStreak = s.getTrueGlobalStreak(ctx, userID, lastProd, loc, false)
+		if currentStreak > totalStreak {
+			totalStreak = currentStreak
+		}
+	}
 
 	// Format week as YYYY-WW (ISO)
 	year, week := td.ISOWeek()
@@ -238,7 +252,7 @@ func getLastProductiveDate(days []DayStatus, today time.Time) string {
 
 // streakEndingOn returns the consecutive "done" streak count ending on the given date (inclusive).
 // days are in chronological order; we count backward from endDateStr.
-func streakEndingOn(days []DayStatus, endDateStr string) int {
+func streakEndingOn(days []DayStatus, endDateStr string) (run int, overflows bool) {
 	var j int
 	for j = len(days) - 1; j >= 0; j-- {
 		if days[j].Date == endDateStr {
@@ -246,16 +260,97 @@ func streakEndingOn(days []DayStatus, endDateStr string) int {
 		}
 	}
 	if j < 0 || days[j].Status != "done" {
-		return 0
+		return 0, false
 	}
-	run := 0
+	run = 0
 	for i := j; i >= 0; i-- {
 		if days[i].Status != "done" {
-			break
+			return run, false
 		}
 		run++
 	}
-	return run
+	return run, true
+}
+
+// getTrueGlobalStreak resolves the true ongoing streak as of lastProdStr.
+func (s *service) getTrueGlobalStreak(ctx context.Context, userID string, lastProdStr string, loc *time.Location, updateCache bool) int {
+	state, err := s.repo.GetStreakState(ctx, userID)
+	if err != nil {
+		return s.calculateHistoricalStreak(ctx, userID, lastProdStr, loc)
+	}
+
+	if state != nil && state.LastProductiveDate != "" {
+		lastCached, err1 := time.ParseInLocation(dateLayout, state.LastProductiveDate, loc)
+		currentProd, err2 := time.ParseInLocation(dateLayout, lastProdStr, loc)
+
+		if err1 == nil && err2 == nil {
+			if currentProd.Equal(lastCached) {
+				return state.CurrentGlobalStreak
+			}
+
+			// Perfect continuation
+			if currentProd.Equal(lastCached.AddDate(0, 0, 1)) {
+				newStreak := state.CurrentGlobalStreak + 1
+				if updateCache {
+					state.CurrentGlobalStreak = newStreak
+					state.LastProductiveDate = lastProdStr
+					_ = s.repo.SetStreakState(ctx, userID, state)
+				}
+				return newStreak
+			}
+		}
+	}
+
+	// Fallback Path
+	trueStreak := s.calculateHistoricalStreak(ctx, userID, lastProdStr, loc)
+
+	if updateCache {
+		if state == nil {
+			state = &StreakState{UserID: userID}
+		}
+		state.CurrentGlobalStreak = trueStreak
+		state.LastProductiveDate = lastProdStr
+		_ = s.repo.SetStreakState(ctx, userID, state)
+	}
+
+	return trueStreak
+}
+
+// calculateHistoricalStreak counts backwards in chunks to find the true streak
+func (s *service) calculateHistoricalStreak(ctx context.Context, userID string, endDateStr string, loc *time.Location) int {
+	endT, err := time.ParseInLocation(dateLayout, endDateStr, loc)
+	if err != nil {
+		return 0
+	}
+
+	currentStreak := 0
+	currentEnd := endT.AddDate(0, 0, 1)
+	currentStart := currentEnd.AddDate(0, -1, 0)
+	targetDate := endT
+
+	for {
+		summaries, err := s.repo.GetDailySummaries(ctx, userID, currentStart, currentEnd)
+		if err != nil {
+			return currentStreak
+		}
+
+		dayMap := make(map[string]bool)
+		for _, sum := range summaries {
+			dayMap[sum.Date.In(loc).Format(dateLayout)] = true
+		}
+
+		for d := targetDate; !d.Before(currentStart); d = d.AddDate(0, 0, -1) {
+			if dayMap[d.Format(dateLayout)] {
+				currentStreak++
+			} else {
+				return currentStreak
+			}
+		}
+
+		targetDate = currentStart.AddDate(0, 0, -1)
+		currentEnd = currentStart
+		currentStart = currentEnd.AddDate(0, -1, 0)
+	}
 }
 
 // GetCurrentStreak returns current running streak (last 30 days window) with status/grace/expired and recovery quota.
@@ -293,8 +388,26 @@ func (s *service) GetCurrentStreak(ctx context.Context, userID string, timezone 
 		days = append(days, DayStatus{Date: dayStr, Day: dayName, Status: dayStatus})
 	}
 
-	totalStreak, currentStreak := s.calculateStreaks(days, now)
+	totalStreak, currentStreak, overflows := s.calculateStreaks(days, now)
 	lastProd := getLastProductiveDate(days, today)
+
+	if overflows && lastProd != "" {
+		currentStreak = s.getTrueGlobalStreak(ctx, userID, lastProd, loc, true)
+		if currentStreak > totalStreak {
+			totalStreak = currentStreak
+		}
+	} else if lastProd != "" {
+		// Streak fully contained in 30 days, update cache
+		state, _ := s.repo.GetStreakState(ctx, userID)
+		if state == nil {
+			state = &StreakState{UserID: userID}
+		}
+		if state.CurrentGlobalStreak != currentStreak || state.LastProductiveDate != lastProd {
+			state.CurrentGlobalStreak = currentStreak
+			state.LastProductiveDate = lastProd
+			_ = s.repo.SetStreakState(ctx, userID, state)
+		}
+	}
 
 	resp := &StreakData{
 		TotalStreak:           totalStreak,
@@ -321,7 +434,7 @@ func (s *service) GetCurrentStreak(ctx context.Context, userID string, timezone 
 		if lastProd != "" && errLast == nil && lastProdT2.After(expiredT) {
 			// New activity after expired date: bridge the gap
 			// bridged = pre-break streak + consecutive days after the break
-			postBreakStreak := streakEndingOn(days, lastProd)
+			postBreakStreak, _ := streakEndingOn(days, lastProd)
 			bridgedStreak := state.StreakValueBeforeExpired + postBreakStreak
 
 			// Check for a NEW break based on the actual last productive date
@@ -398,7 +511,7 @@ func (s *service) GetCurrentStreak(ctx context.Context, userID string, timezone 
 	resp.ExpiredAt = expiredDate.Format(dateLayout)
 	if state == nil || state.ExpiredAt != resp.ExpiredAt {
 		// First time we see this expiry: persist streak value for recovery
-		streakBeforeExpired := streakEndingOn(days, lastProd)
+		streakBeforeExpired, _ := streakEndingOn(days, lastProd)
 		newState := &StreakState{
 			UserID:                  userID,
 			ExpiredAt:               resp.ExpiredAt,
@@ -483,7 +596,7 @@ func (s *service) RecoverStreak(ctx context.Context, userID string, isPremium bo
 // - currentStreak: consecutive "done" days ending on the *last productive day* (<= today),
 //                  so streak tetap menunjukkan jumlah hari terakhir yang konsisten,
 //                  meskipun hari ini belum ada aktivitas (belum "done").
-func (s *service) calculateStreaks(days []DayStatus, now time.Time) (totalStreak, currentStreak int) {
+func (s *service) calculateStreaks(days []DayStatus, now time.Time) (totalStreak, currentStreak int, overflows bool) {
 	// Longest consecutive "done" (unchanged)
 	maxStreak := 0
 	run := 0
@@ -507,7 +620,7 @@ func (s *service) calculateStreaks(days []DayStatus, now time.Time) (totalStreak
 		return
 	}
 
-	currentStreak = streakEndingOn(days, lastProd)
+	currentStreak, overflows = streakEndingOn(days, lastProd)
 	return
 }
 
