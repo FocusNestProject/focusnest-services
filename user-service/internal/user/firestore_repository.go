@@ -118,12 +118,17 @@ func (r *firestoreRepository) GetProfileMetadata(ctx context.Context, userID str
 		}
 		
 		metrics.TotalSessions++
-		metrics.TotalCycle += snapshot.NumCycle
+		cycle := snapshot.NumCycle
+		if cycle <= 0 {
+			cycle = 1
+		}
+		metrics.TotalCycle += cycle
 
 		if snapshot.StartTime.IsZero() {
 			continue
 		}
-		day := snapshot.StartTime.In(loc).Truncate(24 * time.Hour)
+		localStart := snapshot.StartTime.In(loc)
+		day := time.Date(localStart.Year(), localStart.Month(), localStart.Day(), 0, 0, 0, 0, loc)
 		if !lastProcessedDay.IsZero() && day.Equal(lastProcessedDay) {
 			continue
 		}
