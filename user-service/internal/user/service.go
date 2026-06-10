@@ -472,31 +472,54 @@ func computeDailyMinutesStreakProgress(def ChallengeDefinition, minsByDate map[s
 	minPerDay := def.MinMinutesPerDay
 	targetDays := def.ConsecutiveDays
 
-	// Find the longest streak in the entire 45-day window.
+	// 1. Calculate maxStreak to see if they completed it
 	maxStreak := 0
-	currentStreak := 0
+	tempStreak := 0
 	for i := 45; i >= 0; i-- { // iterate chronologically
 		day := today.AddDate(0, 0, -i)
 		key := day.Format("2006-01-02")
 		mins := minsByDate[key]
 		if mins >= minPerDay {
-			currentStreak++
-			if currentStreak > maxStreak {
-				maxStreak = currentStreak
+			tempStreak++
+			if tempStreak > maxStreak {
+				maxStreak = tempStreak
 			}
 		} else {
-			currentStreak = 0
+			tempStreak = 0
 		}
 	}
 
+	// 2. Calculate activeStreak
+	activeStreak := 0
+	for i := 0; i <= 45; i++ {
+		day := today.AddDate(0, 0, -i)
+		key := day.Format("2006-01-02")
+		mins := minsByDate[key]
+		if mins >= minPerDay {
+			activeStreak++
+		} else {
+			if i == 0 {
+				// missed today is fine, the streak is still active from yesterday
+				continue
+			}
+			// missed yesterday (or earlier), streak is broken
+			break
+		}
+	}
+
+	displayedStreak := activeStreak
+	if maxStreak >= targetDays {
+		displayedStreak = maxStreak
+	}
+
 	minsToday := minsByDate[today.Format("2006-01-02")]
-	percent := (maxStreak * 100) / targetDays
+	percent := (displayedStreak * 100) / targetDays
 	if percent > 100 {
 		percent = 100
 	}
 
 	return ChallengeProgress{
-		CurrentStreakDays: maxStreak,
+		CurrentStreakDays: displayedStreak,
 		TargetStreakDays:  targetDays,
 		MinMinutesPerDay:  minPerDay,
 		MinutesToday:      minsToday,

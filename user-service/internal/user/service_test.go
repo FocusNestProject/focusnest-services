@@ -22,6 +22,7 @@ type fakeRepo struct {
 	getCyclesByDateFn            func(context.Context, string, time.Time, *time.Location) (int, error)
 	getMindfulnessMinutesByDateFn func(context.Context, string, time.Time, *time.Location) (int, error)
 	recordMindfulnessFn          func(context.Context, string, int) error
+	getChallengeClaimedAtFn      func(context.Context, string, string) (time.Time, error)
 }
 
 func (f *fakeRepo) GetProfile(ctx context.Context, userID string) (*Profile, error) {
@@ -71,6 +72,13 @@ func (f *fakeRepo) IsChallengeClaimed(ctx context.Context, userID, challengeID s
 		return f.isChallengeClaimedFn(ctx, userID, challengeID)
 	}
 	return false, nil
+}
+
+func (f *fakeRepo) GetChallengeClaimedAt(ctx context.Context, userID, challengeID string) (time.Time, error) {
+	if f.getChallengeClaimedAtFn != nil {
+		return f.getChallengeClaimedAtFn(ctx, userID, challengeID)
+	}
+	return time.Time{}, nil
 }
 
 func (f *fakeRepo) ClaimChallenge(ctx context.Context, userID, challengeID string, points int) (int, time.Time, bool, error) {
