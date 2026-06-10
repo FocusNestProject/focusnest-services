@@ -316,3 +316,120 @@ func TestServiceGetChallengesMe_ComplexRules(t *testing.T) {
 		}
 	}
 }
+
+func TestClaimChallenge_NotEligible(t *testing.T) {
+	repo := &fakeRepo{
+		getProfileFn: func(ctx context.Context, userID string) (*Profile, error) {
+			return &Profile{UserID: userID, PointsTotal: 100}, nil
+		},
+		listChallengesFn: func(ctx context.Context) ([]ChallengeDefinition, error) {
+			return []ChallengeDefinition{
+				{
+					ID:           "streak_10_days",
+					RuleType:     ChallengeRuleStreakMilestone,
+					TargetStreak: 10,
+					RewardPoints: 50,
+				},
+			}, nil
+		},
+		getProfileMetaFn: func(ctx context.Context, userID string, loc *time.Location) (ProfileMetadata, error) {
+			return ProfileMetadata{LongestStreak: 5}, nil // Not eligible (5 < 10)
+		},
+	}
+
+	svc := NewService(repo)
+	resp, err := svc.ClaimChallenge(context.Background(), "user-1", "streak_10_days", "UTC")
+	if err != nil {
+		t.Fatalf("ClaimChallenge failed: %v", err)
+	}
+
+	if resp.Claimed {
+		t.Errorf("Expected Claimed to be false")
+	}
+	if resp.PointsAwarded != 0 {
+		t.Errorf("Expected PointsAwarded to be 0, got %d", resp.PointsAwarded)
+	}
+	if resp.PointsTotal != 100 {
+		t.Errorf("Expected PointsTotal to remain 100, got %d", resp.PointsTotal)
+	}
+}
+
+func TestClaimChallenge_Eligible_Success(t *testing.T) {
+	repo := &fakeRepo{
+		listChallengesFn: func(ctx context.Context) ([]ChallengeDefinition, error) {
+			return []ChallengeDefinition{
+				{
+					ID:           "streak_10_days",
+					RuleType:     ChallengeRuleStreakMilestone,
+					TargetStreak: 10,
+					RewardPoints: 50,
+				},
+			}, nil
+		},
+		getProfileMetaFn: func(ctx context.Context, userID string, loc *time.Location) (ProfileMetadata, error) {
+			return ProfileMetadata{LongestStreak: 15}, nil // Eligible (15 >= 10)
+		},
+		claimChallengeFn: func(ctx context.Context, userID, challengeID string, points int) (int, time.Time, bool, error) {
+			return 150, time.Now(), false, nil // Success, new total is 150
+		},
+	}
+
+	svc := NewService(repo)
+	resp, err := svc.ClaimChallenge(context.Background(), "user-1", "streak_10_days", "UTC")
+	if err != nil {
+		t.Fatalf("ClaimChallenge failed: %v", err)
+	}
+
+	if !resp.Claimed {
+		t.Errorf("Expected Claimed to be true")
+	}
+	if resp.AlreadyClaimed {
+		t.Errorf("Expected AlreadyClaimed to be false")
+	}
+	if resp.PointsAwarded != 50 {
+		t.Errorf("Expected PointsAwarded to be 50, got %d", resp.PointsAwarded)
+	}
+	if resp.PointsTotal != 150 {
+		t.Errorf("Expected PointsTotal to be 150, got %d", resp.PointsTotal)
+	}
+}
+
+func TestClaimChallenge_AlreadyClaimed(t *testing.T) {
+	repo := &fakeRepo{
+		listChallengesFn: func(ctx context.Context) ([]ChallengeDefinition, error) {
+			return []ChallengeDefinition{
+				{
+					ID:           "streak_10_days",
+					RuleType:     ChallengeRuleStreakMilestone,
+					TargetStreak: 10,
+					RewardPoints: 50,
+				},
+			}, nil
+		},
+		getProfileMetaFn: func(ctx context.Context, userID string, loc *time.Location) (ProfileMetadata, error) {
+			return ProfileMetadata{LongestStreak: 15}, nil // Eligible
+		},
+		claimChallengeFn: func(ctx context.Context, userID, challengeID string, points int) (int, time.Time, bool, error) {
+			return 150, time.Now(), true, nil // Already claimed! True
+		},
+	}
+
+	svc := NewService(repo)
+	resp, err := svc.ClaimChallenge(context.Background(), "user-1", "streak_10_days", "UTC")
+	if err != nil {
+		t.Fatalf("ClaimChallenge failed: %v", err)
+	}
+
+	if resp.Claimed {
+		t.Errorf("Expected Claimed to be false because it was already claimed")
+	}
+	if !resp.AlreadyClaimed {
+		t.Errorf("Expected AlreadyClaimed to be true")
+	}
+	if resp.PointsAwarded != 0 {
+		t.Errorf("Expected PointsAwarded to be 0 for already claimed, got %d", resp.PointsAwarded)
+	}
+	if resp.PointsTotal != 150 {
+		t.Errorf("Expected PointsTotal to be 150, got %d", resp.PointsTotal)
+	}
+}

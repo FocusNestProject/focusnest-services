@@ -228,15 +228,6 @@ func (s *service) GetChallengesMe(ctx context.Context, userID string, timezone s
 			return nil, err
 		}
 
-		// Auto-claim logic (Lazy auto-claim when accessed)
-		if completed && !claimed {
-			newTotal, _, alreadyClaimed, errClaim := s.repo.ClaimChallenge(ctx, userID, def.ID, def.RewardPoints)
-			if errClaim == nil && !alreadyClaimed {
-				claimed = true
-				profile.PointsTotal = newTotal // update local points total
-			}
-		}
-
 		statuses = append(statuses, ChallengeStatus{
 			Challenge: def,
 			Progress:  progress,

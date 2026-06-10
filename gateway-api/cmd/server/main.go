@@ -88,7 +88,11 @@ func main() {
 				)
 				// Continue without Firestore; email sending still works.
 			} else {
-				defer fsClient.Close()
+				defer func() {
+					if err := fsClient.Close(); err != nil {
+						logger.Error("failed to close firestore client", slog.Any("error", err))
+					}
+				}()
 				logger.Info("firestore enabled for feedback persistence")
 			}
 		}

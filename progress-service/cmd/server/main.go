@@ -33,7 +33,11 @@ func main() {
 	if err != nil {
 		panic(fmt.Errorf("firestore client: %w", err))
 	}
-	defer client.Close()
+	defer func() {
+		if err := client.Close(); err != nil {
+			logger.Error("failed to close firestore client", "error", err)
+		}
+	}()
 
 	// Initialize progress service
 	progressRepo := progress.NewFirestoreRepository(client)

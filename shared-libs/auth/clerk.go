@@ -1,3 +1,4 @@
+// Package auth provides authentication utilities for the FocusNest platform.
 package auth
 
 import (
@@ -136,11 +137,14 @@ func (v *clerkVerifier) refreshKeys(ctx context.Context) error {
 		return fmt.Errorf("create jwks request: %w", err)
 	}
 
+	//nolint:gosec // jwksURL is loaded from trusted configuration
 	resp, err := v.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("fetch jwks: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("fetch jwks: unexpected status %d", resp.StatusCode)
