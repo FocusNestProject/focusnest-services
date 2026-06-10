@@ -184,10 +184,9 @@ func (r *firestoreRepository) GetDailyMinutesByDate(ctx context.Context, userID 
 
 func (r *firestoreRepository) fetchProductivitiesForWindow(ctx context.Context, userID string, startDate, endDate time.Time) ([]ProductivityEntry, error) {
 	iter := r.client.Collection("users").Doc(userID).Collection("productivities").
-		Where("anchor", ">=", startDate).
-		Where("anchor", "<", endDate).
-		Where("deleted", "==", false).
-		OrderBy("anchor", firestore.Asc).
+		Where("start_time", ">=", startDate).
+		Where("start_time", "<", endDate).
+		OrderBy("start_time", firestore.Asc).
 		Documents(ctx)
 	defer iter.Stop()
 
@@ -203,8 +202,12 @@ func (r *firestoreRepository) fetchProductivitiesForWindow(ctx context.Context, 
 		var payload struct {
 			StartTime   time.Time `firestore:"start_time"`
 			TimeElapsed int       `firestore:"time_elapsed"`
+			Deleted     bool      `firestore:"deleted"`
 		}
 		if err := doc.DataTo(&payload); err != nil {
+			continue
+		}
+		if payload.Deleted {
 			continue
 		}
 		entries = append(entries, ProductivityEntry{

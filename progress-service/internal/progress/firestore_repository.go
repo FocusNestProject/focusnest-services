@@ -90,10 +90,9 @@ func (r *firestoreRepository) ListProductivities(ctx context.Context, userID str
 
 func (r *firestoreRepository) fetchProductivities(ctx context.Context, userID string, startDate, endDate time.Time) ([]ProductivityEntry, error) {
 	iter := r.client.Collection("users").Doc(userID).Collection("productivities").
-		Where("anchor", ">=", startDate).
-		Where("anchor", "<", endDate).
-		Where("deleted", "==", false).
-		OrderBy("anchor", firestore.Asc).
+		Where("start_time", ">=", startDate).
+		Where("start_time", "<", endDate).
+		OrderBy("start_time", firestore.Asc).
 		Documents(ctx)
 
 	var entries []ProductivityEntry
@@ -111,8 +110,12 @@ func (r *firestoreRepository) fetchProductivities(ctx context.Context, userID st
 			EndTime     time.Time `firestore:"end_time"`
 			TimeElapsed int       `firestore:"time_elapsed"`
 			Category    string    `firestore:"category"`
+			Deleted     bool      `firestore:"deleted"`
 		}
 		if err := doc.DataTo(&payload); err != nil {
+			continue
+		}
+		if payload.Deleted {
 			continue
 		}
 		entries = append(entries, ProductivityEntry{
