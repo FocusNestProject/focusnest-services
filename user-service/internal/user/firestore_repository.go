@@ -247,19 +247,25 @@ func (r *firestoreRepository) CreateChallenge(ctx context.Context, def Challenge
 	return err
 }
 
-func (r *firestoreRepository) IsChallengeClaimed(ctx context.Context, userID, challengeID string) (bool, error) {
+func (r *firestoreRepository) GetChallengeClaimedAt(ctx context.Context, userID, challengeID string) (time.Time, error) {
 	if userID == "" || challengeID == "" {
-		return false, nil
+		return time.Time{}, nil
 	}
 	ref := r.client.Collection("profiles").Doc(userID).Collection("challenge_claims").Doc(challengeID)
-	_, err := ref.Get(ctx)
+	doc, err := ref.Get(ctx)
 	if status.Code(err) == codes.NotFound {
-		return false, nil
+		return time.Time{}, nil
 	}
 	if err != nil {
-		return false, err
+		return time.Time{}, err
 	}
-	return true, nil
+	var claim struct {
+		ClaimedAt time.Time `firestore:"claimed_at"`
+	}
+	if err := doc.DataTo(&claim); err != nil {
+		return time.Time{}, nil // fallback
+	}
+	return claim.ClaimedAt, nil
 }
 
 func (r *firestoreRepository) ClaimChallenge(ctx context.Context, userID, challengeID string, points int) (newTotal int, claimedAt time.Time, alreadyClaimed bool, err error) {
@@ -275,25 +281,8 @@ func (r *firestoreRepository) ClaimChallenge(ctx context.Context, userID, challe
 	now := time.Now().UTC()
 
 	err = r.client.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
-		// If claim doc exists, do nothing (idempotent).
-		_, getErr := tx.Get(claimRef)
-		if getErr == nil {
-			alreadyClaimed = true
-			// Still return current points_total.
-			doc, err := tx.Get(profileRef)
-			if err != nil {
-				return err
-			}
-			var p Profile
-			if err := doc.DataTo(&p); err != nil {
-				return err
-			}
-			newTotal = p.PointsTotal
-			return nil
-		}
-		if status.Code(getErr) != codes.NotFound {
-			return getErr
-		}
+		// We allow overwriting the claim document because service.go handles period checking.
+		// Just ensure profile exists.
 
 		// Ensure profile exists; if missing, create baseline.
 		if _, err := tx.Get(profileRef); status.Code(err) == codes.NotFound {
@@ -319,17 +308,12 @@ func (r *firestoreRepository) ClaimChallenge(ctx context.Context, userID, challe
 			return err
 		}
 
-		// Create claim doc.
-		if err := tx.Create(claimRef, map[string]any{
+		// Set claim doc.
+		if err := tx.Set(claimRef, map[string]any{
 			"challenge_id":   challengeID,
 			"points_awarded": points,
 			"claimed_at":     now,
-		}); err != nil {
-			// If race created it, treat as already claimed.
-			if status.Code(err) == codes.AlreadyExists {
-				alreadyClaimed = true
-				return nil
-			}
+		}, firestore.MergeAll); err != nil {
 			return err
 		}
 

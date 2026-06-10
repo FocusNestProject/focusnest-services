@@ -145,7 +145,7 @@ type Repository interface {
 	GetDailyMinutesByDate(ctx context.Context, userID string, startDate, endDate time.Time, loc *time.Location) (map[string]int, error)
 	ListChallenges(ctx context.Context) ([]ChallengeDefinition, error)
 	CreateChallenge(ctx context.Context, def ChallengeDefinition) error
-	IsChallengeClaimed(ctx context.Context, userID, challengeID string) (bool, error)
+	GetChallengeClaimedAt(ctx context.Context, userID, challengeID string) (time.Time, error)
 	ClaimChallenge(ctx context.Context, userID, challengeID string, points int) (newTotal int, claimedAt time.Time, alreadyClaimed bool, err error)
 
 	// For weekly shares challenge

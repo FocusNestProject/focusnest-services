@@ -223,9 +223,27 @@ func (s *service) GetChallengesMe(ctx context.Context, userID string, timezone s
 			continue
 		}
 
-		claimed, err := s.repo.IsChallengeClaimed(ctx, userID, def.ID)
+		claimedAt, err := s.repo.GetChallengeClaimedAt(ctx, userID, def.ID)
 		if err != nil {
 			return nil, err
+		}
+		
+		claimed := false
+		if !claimedAt.IsZero() {
+			switch def.RuleType {
+			case ChallengeRuleDailyMinutesStreak, ChallengeRuleStreakMilestone:
+				claimed = true
+			case ChallengeRuleWeeklyShares:
+				if claimedAt.After(weekStart) || claimedAt.Equal(weekStart) {
+					claimed = true
+				}
+			case ChallengeRuleCyclesAndMindfulness:
+				if claimedAt.After(today) || claimedAt.Equal(today) {
+					claimed = true
+				}
+			default:
+				claimed = true
+			}
 		}
 
 		statuses = append(statuses, ChallengeStatus{
@@ -338,6 +356,42 @@ func (s *service) ClaimChallenge(ctx context.Context, userID, challengeID string
 
 	default:
 		return nil, fmt.Errorf("unsupported challenge type")
+	}
+
+	if eligible {
+		// Check if it's already claimed for the current period
+		claimedAt, err := s.repo.GetChallengeClaimedAt(ctx, userID, challengeID)
+		if err != nil {
+			return nil, err
+		}
+		if !claimedAt.IsZero() {
+			already := false
+			switch def.RuleType {
+			case ChallengeRuleDailyMinutesStreak, ChallengeRuleStreakMilestone:
+				already = true
+			case ChallengeRuleWeeklyShares:
+				weekStart := getWeekStart(today)
+				if claimedAt.After(weekStart) || claimedAt.Equal(weekStart) {
+					already = true
+				}
+			case ChallengeRuleCyclesAndMindfulness:
+				if claimedAt.After(today) || claimedAt.Equal(today) {
+					already = true
+				}
+			default:
+				already = true
+			}
+			if already {
+				profile, _ := s.repo.GetProfile(ctx, userID)
+				return &ClaimChallengeResponse{
+					ChallengeID:    challengeID,
+					Claimed:        false,
+					AlreadyClaimed: true,
+					PointsAwarded:  0,
+					PointsTotal:    func() int { if profile != nil { return profile.PointsTotal }; return 0 }(),
+				}, nil
+			}
+		}
 	}
 
 	if !eligible {
